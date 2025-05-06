@@ -1,0 +1,396 @@
+{
+  "questions": {
+    "Municipal_Pueblo/Aldea": [
+      {
+        "id": "nombre_empresa",
+        "text": "¿Cuál es el nombre de tu localidad o proyecto?",
+        "type": "text",
+        "required": true,
+        "explanation": "Esto nos ayuda a personalizar nuestra propuesta y facilita el seguimiento de tu caso."
+      },
+      {
+        "id": "ubicacion",
+        "text": "¿Cuál es la ubicación de la localidad (Municipio, Estado, coordenadas)?",
+        "type": "text",
+        "required": true,
+        "explanation": "La ubicación es importante para entender factores regionales como la disponibilidad de agua, normativas locales y condiciones climáticas que pueden afectar a tu solución."
+      },
+      {
+        "id": "costo_agua",
+        "text": "¿Cuál es el costo actual del agua que utilizan (moneda/unidad de medición)?",
+        "type": "text",
+        "required": true,
+        "explanation": "Conocer el costo actual nos permite calcular el potencial ahorro y el retorno de inversión de las soluciones que propongamos."
+      },
+      {
+        "id": "cantidad_agua_consumida",
+        "text": "¿Qué cantidad de agua consume la comunidad (unidad de medición/unidad de tiempo)?",
+        "type": "text",
+        "required": true,
+        "explanation": "El volumen de consumo determina la escala del sistema de tratamiento necesario y es crucial para calcular costos y beneficios."
+      },
+      {
+        "id": "cantidad_agua_residual",
+        "text": "¿Qué cantidad de aguas residuales genera la comunidad (unidad de medición/unidad de tiempo)?",
+        "type": "text",
+        "required": true,
+        "explanation": "Esta información nos permite dimensionar correctamente los sistemas de tratamiento requeridos."
+      },
+      {
+        "id": "num_personas",
+        "text": "¿Aproximadamente cuántas personas viven en esta localidad?",
+        "type": "multiple_choice",
+        "options": [
+          "Menos de 100",
+          "Entre 100 y 499",
+          "Entre 500 y 999",
+          "Entre 1,000 y 4,999",
+          "Entre 5,000 y 9,999",
+          "Entre 10,000 y 24,999",
+          "25,000 o más"
+        ],
+        "required": true,
+        "explanation": "El número de personas ayuda a estimar el consumo de agua y permite dimensionar soluciones adecuadas."
+      },
+      {
+        "id": "picos_agua_residual",
+        "text": "¿Cuáles son los volúmenes de agua promedios y picos de generación de agua residual?",
+        "type": "text",
+        "required": false,
+        "explanation": "Conocer los picos de consumo nos permite dimensionar correctamente los sistemas para manejar la carga máxima."
+      },
+      {
+        "id": "parametros_agua",
+        "text": "¿Puede proporcionar los parámetros más importantes del agua en su localidad?",
+        "type": "complex",
+        "subquestions": [
+          {
+            "id": "sdt",
+            "text": "SDT (Sólidos disueltos Totales)",
+            "type": "text"
+          },
+          {
+            "id": "bacterias",
+            "text": "Bacterias",
+            "type": "text"
+          },
+          {
+            "id": "dureza_total",
+            "text": "Dureza Total",
+            "type": "text"
+          }
+        ],
+        "required": false,
+        "explanation": "Estos parámetros son críticos para determinar la calidad del agua y planificar los tratamientos necesarios para tu localidad."
+      },
+      {
+        "id": "usos_agua",
+        "text": "¿Cuáles son los usos principales del agua?",
+        "type": "multiple_select",
+        "options": [
+          "Suministro de agua potable",
+          "Riego"
+        ],
+        "required": true,
+        "explanation": "Entender los usos específicos del agua nos ayuda a identificar oportunidades de reciclaje y reuso del agua."
+      },
+      {
+        "id": "agua_potable_analisis",
+        "text": "¿Puede proporcionar información sobre volúmenes de agua potable y análisis de la misma?",
+        "type": "text",
+        "required": false,
+        "explanation": "Esta información nos ayuda a entender la calidad del agua de entrada y sus necesidades de tratamiento."
+      },
+      {
+        "id": "objetivo_principal",
+        "text": "¿Cuál es el objetivo principal que están buscando?",
+        "type": "multiple_choice",
+        "options": [
+          "Cumplimiento normativo",
+          "Reducción de la huella ambiental",
+          "Ahorro de costos/Proyecto de retorno de inversión",
+          "Mayor disponibilidad de agua",
+          "Otro (especifique)"
+        ],
+        "required": true,
+        "explanation": "Conocer tu objetivo principal nos ayuda a alinear la solución propuesta con tus prioridades específicas."
+      },
+      {
+        "id": "objetivo_reuso",
+        "text": "¿Cuáles son sus objetivos de reúso del agua o descarga del agua tratada?",
+        "type": "multiple_select",
+        "options": [
+          "Uso en riego de áreas verdes",
+          "Reúso en sanitarios",
+          "Reúso en procesos industriales",
+          "Cumplimiento normativo",
+          "Otro (especifique)"
+        ],
+        "required": true,
+        "explanation": "Estos objetivos específicos nos permiten diseñar el sistema para que el agua tratada cumpla con los requisitos de calidad para su reutilización."
+      },
+      {
+        "id": "descarga_actual",
+        "text": "¿Actualmente en dónde descargan sus aguas residuales?",
+        "type": "multiple_choice",
+        "options": [
+          "Alcantarillado",
+          "Cuerpo de agua natural (Ríos, Lagunas, Esteros o Subsuelo)",
+          "Otro (especifique)"
+        ],
+        "required": true,
+        "explanation": "El punto de descarga actual puede estar sujeto a diferentes normativas y costos, lo que afecta el diseño de la solución."
+      }
+    ],
+    "Residencial_Vivienda unifamiliar": [
+      {
+        "id": "nombre_empresa",
+        "text": "¿Cuál es su nombre o el nombre del proyecto?",
+        "type": "text",
+        "required": true,
+        "explanation": "Esto nos ayuda a personalizar nuestra propuesta y facilita el seguimiento de tu caso."
+      },
+      {
+        "id": "ubicacion",
+        "text": "¿Cuál es la ubicación de su vivienda (Colonia, Ciudad, Código Postal)?",
+        "type": "text",
+        "required": true,
+        "explanation": "La ubicación es importante para entender factores regionales como la disponibilidad de agua, normativas locales y condiciones climáticas que pueden afectar a tu solución."
+      },
+      {
+        "id": "costo_agua",
+        "text": "¿Cuál es el costo actual del agua que utiliza (moneda/unidad de medición)?",
+        "type": "text",
+        "required": true,
+        "explanation": "Conocer el costo actual nos permite calcular el potencial ahorro y el retorno de inversión de las soluciones que propongamos."
+      },
+      {
+        "id": "cantidad_agua_consumida",
+        "text": "¿Qué cantidad de agua consume su hogar (unidad de medición/unidad de tiempo)?",
+        "type": "text",
+        "required": true,
+        "explanation": "El volumen de consumo determina la escala del sistema de tratamiento necesario y es crucial para calcular costos y beneficios."
+      },
+      {
+        "id": "cantidad_agua_residual",
+        "text": "¿Qué cantidad de aguas residuales genera su hogar (unidad de medición/unidad de tiempo)?",
+        "type": "text",
+        "required": true,
+        "explanation": "Esta información nos permite dimensionar correctamente los sistemas de tratamiento requeridos."
+      },
+      {
+        "id": "num_personas",
+        "text": "¿Cuántas personas viven en su hogar?",
+        "type": "text",
+        "required": true,
+        "explanation": "El número de personas ayuda a estimar el consumo de agua y permite dimensionar soluciones adecuadas."
+      },
+      {
+        "id": "parametros_agua",
+        "text": "¿Puede proporcionar los parámetros más importantes del agua residencial?",
+        "type": "complex",
+        "subquestions": [
+          {
+            "id": "dureza",
+            "text": "Dureza",
+            "type": "text"
+          },
+          {
+            "id": "cloro",
+            "text": "Cloro",
+            "type": "text"
+          },
+          {
+            "id": "microorganismos",
+            "text": "Microorganismos",
+            "type": "text"
+          }
+        ],
+        "required": false,
+        "explanation": "Estos parámetros son críticos para determinar la calidad del agua y planificar los tratamientos necesarios para su hogar."
+      },
+      {
+        "id": "usos_agua",
+        "text": "¿Cuáles son los usos principales del agua en su hogar?",
+        "type": "multiple_select",
+        "options": [
+          "Bebidas",
+          "Preparación de alimentos",
+          "Limpieza personal"
+        ],
+        "required": true,
+        "explanation": "Entender los usos específicos del agua nos ayuda a identificar oportunidades de reciclaje y reuso del agua."
+      },
+      {
+        "id": "agua_potable_analisis",
+        "text": "¿Puede proporcionar información sobre volúmenes de agua potable y análisis de la misma?",
+        "type": "text",
+        "required": false,
+        "explanation": "Esta información nos ayuda a entender la calidad del agua de entrada y sus necesidades de tratamiento."
+      },
+      {
+        "id": "objetivo_principal",
+        "text": "¿Cuál es el objetivo principal que está buscando?",
+        "type": "multiple_choice",
+        "options": [
+          "Cumplimiento normativo",
+          "Reducción de la huella ambiental",
+          "Ahorro de costos/Proyecto de retorno de inversión",
+          "Mayor disponibilidad de agua",
+          "Otro (especifique)"
+        ],
+        "required": true,
+        "explanation": "Conocer tu objetivo principal nos ayuda a alinear la solución propuesta con tus prioridades específicas."
+      },
+      {
+        "id": "objetivo_reuso",
+        "text": "¿Cuáles son sus objetivos de reúso del agua o descarga del agua tratada?",
+        "type": "multiple_select",
+        "options": [
+          "Uso en riego de áreas verdes",
+          "Reúso en sanitarios",
+          "Reúso en procesos industriales",
+          "Cumplimiento normativo",
+          "Otro (especifique)"
+        ],
+        "required": true,
+        "explanation": "Estos objetivos específicos nos permiten diseñar el sistema para que el agua tratada cumpla con los requisitos de calidad para su reutilización."
+      },
+      {
+        "id": "descarga_actual",
+        "text": "¿Actualmente en dónde descarga sus aguas residuales?",
+        "type": "multiple_choice",
+        "options": [
+          "Alcantarillado",
+          "Cuerpo de agua natural (Ríos, Lagunas, Esteros o Subsuelo)",
+          "Otro (especifique)"
+        ],
+        "required": true,
+        "explanation": "El punto de descarga actual puede estar sujeto a diferentes normativas y costos, lo que afecta el diseño de la solución."
+      }
+    ],
+    "Residencial_Edificio multifamiliar": [
+      {
+        "id": "nombre_empresa",
+        "text": "¿Cuál es el nombre de su edificio o proyecto?",
+        "type": "text",
+        "required": true,
+        "explanation": "Esto nos ayuda a personalizar nuestra propuesta y facilita el seguimiento de tu caso."
+      },
+      {
+        "id": "ubicacion",
+        "text": "¿Cuál es la ubicación del edificio (Colonia, Ciudad, Código Postal)?",
+        "type": "text",
+        "required": true,
+        "explanation": "La ubicación es importante para entender factores regionales como la disponibilidad de agua, normativas locales y condiciones climáticas que pueden afectar a tu solución."
+      },
+      {
+        "id": "costo_agua",
+        "text": "¿Cuál es el costo actual del agua que utiliza el edificio (moneda/unidad de medición)?",
+        "type": "text",
+        "required": true,
+        "explanation": "Conocer el costo actual nos permite calcular el potencial ahorro y el retorno de inversión de las soluciones que propongamos."
+      },
+      {
+        "id": "cantidad_agua_consumida",
+        "text": "¿Qué cantidad de agua consume el edificio (unidad de medición/unidad de tiempo)?",
+        "type": "text",
+        "required": true,
+        "explanation": "El volumen de consumo determina la escala del sistema de tratamiento necesario y es crucial para calcular costos y beneficios."
+      },
+      {
+        "id": "cantidad_agua_residual",
+        "text": "¿Qué cantidad de aguas residuales genera el edificio (unidad de medición/unidad de tiempo)?",
+        "type": "text",
+        "required": true,
+        "explanation": "Esta información nos permite dimensionar correctamente los sistemas de tratamiento requeridos."
+      },
+      {
+        "id": "num_personas",
+        "text": "¿Aproximadamente cuántas personas viven en el edificio?",
+        "type": "text",
+        "required": true,
+        "explanation": "El número de personas ayuda a estimar el consumo de agua y permite dimensionar soluciones adecuadas."
+      },
+      {
+        "id": "parametros_agua",
+        "text": "¿Puede proporcionar los parámetros más importantes del agua del edificio?",
+        "type": "complex",
+        "subquestions": [
+          {
+            "id": "dureza",
+            "text": "Dureza",
+            "type": "text"
+          },
+          {
+            "id": "cloro",
+            "text": "Cloro",
+            "type": "text"
+          },
+          {
+            "id": "microorganismos",
+            "text": "Microorganismos",
+            "type": "text"
+          }
+        ],
+        "required": false,
+        "explanation": "Estos parámetros son críticos para determinar la calidad del agua y planificar los tratamientos necesarios para el edificio."
+      },
+      {
+        "id": "usos_agua",
+        "text": "¿Cuáles son los usos principales del agua en el edificio?",
+        "type": "multiple_select",
+        "options": [
+          "Agua para consumo humano (Bebidas)",
+          "Refrigeración (aire acondicionado)"
+        ],
+        "required": true,
+        "explanation": "Entender los usos específicos del agua nos ayuda a identificar oportunidades de reciclaje y reuso del agua."
+      },
+      {
+        "id": "agua_potable_analisis",
+        "text": "¿Puede proporcionar información sobre volúmenes de agua potable y análisis de la misma?",
+        "type": "text",
+        "required": false,
+        "explanation": "Esta información nos ayuda a entender la calidad del agua de entrada y sus necesidades de tratamiento."
+      },
+      {
+        "id": "objetivo_principal",
+        "text": "¿Cuál es el objetivo principal que está buscando?",
+        "type": "multiple_choice",
+        "options": [
+          "Cumplimiento normativo",
+          "Reducción de la huella ambiental",
+          "Ahorro de costos/Proyecto de retorno de inversión",
+          "Mayor disponibilidad de agua",
+          "Otro (especifique)"
+        ],
+        "required": true,
+        "explanation": "Conocer tu objetivo principal nos ayuda a alinear la solución propuesta con tus prioridades específicas."
+      }
+    ]
+  },
+  "facts": {
+    "Municipal_Pueblo/Aldea": [
+      "Las comunidades pequeñas que implementan sistemas naturales de tratamiento como humedales artificiales pueden tratar sus aguas residuales con costos operativos hasta 70% menores que los sistemas convencionales.",
+      "Los sistemas descentralizados de tratamiento de agua pueden proporcionar acceso a agua segura a comunidades rurales a un costo 40-60% menor que la extensión de sistemas centralizados.",
+      "Las tecnologías de bajo costo como biofiltros y lagunas de estabilización pueden eliminar hasta el 95% de patógenos en aguas residuales de pequeñas comunidades.",
+      "Las comunidades rurales que implementan sistemas de recolección de agua de lluvia pueden reducir su dependencia de fuentes externas en hasta un 40% durante temporadas lluviosas.",
+      "Los sistemas solares de purificación de agua pueden proporcionar agua potable a pequeñas comunidades sin acceso a electricidad, tratando hasta 2,000 litros diarios con costos operativos mínimos."
+    ],
+    "Residencial_Vivienda unifamiliar": [
+      "Las viviendas unifamiliares pueden reducir su consumo de agua potable hasta en un 50% mediante la implementación de sistemas de tratamiento y reutilización de aguas grises.",
+      "Un sistema de captación de agua de lluvia para una vivienda promedio puede recolectar entre 50,000 y 100,000 litros anuales, dependiendo de la región y el tamaño del techo.",
+      "La reutilización de aguas grises para inodoros y riego puede ahorrar hasta 35,000 litros de agua potable por año en una familia de cuatro miembros.",
+      "Los sistemas combinados de tratamiento de aguas grises y captación de lluvia pueden proporcionar hasta el 70% del agua necesaria para una vivienda unifamiliar.",
+      "La inversión en sistemas residenciales de tratamiento y reuso de agua suele recuperarse en períodos de 3 a 5 años, dependiendo del costo local del agua."
+    ],
+    "Residencial_Edificio multifamiliar": [
+      "Los edificios multifamiliares que implementan sistemas de tratamiento y reutilización de aguas grises pueden reducir su consumo de agua potable hasta en un 40%.",
+      "Un sistema centralizado de tratamiento de aguas grises para un edificio multifamiliar puede procesar entre 5,000 y 10,000 litros diarios, suficientes para cubrir el 100% del agua necesaria para inodoros y riego.",
+      "Los edificios con sistemas de captación de agua de lluvia pueden reducir significativamente la escorrentía pluvial y los riesgos de inundaciones locales.",
+      "La implementación de sistemas de monitoreo de consumo por apartamento puede reducir el uso de agua en un edificio multifamiliar hasta en un 20%.",
+      "Los edificios multifamiliares que implementan sistemas de tratamiento y reuso de agua experimentan incrementos de 3-5% en su valor de mercado y mayor facilidad para la obtención de certificaciones ambientales."
+    ]
+  }
+}

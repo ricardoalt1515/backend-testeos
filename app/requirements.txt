@@ -1,0 +1,32 @@
+# Framework principal
+fastapi==0.109.2
+uvicorn==0.27.1
+pydantic==2.6.1
+pydantic-settings==2.1.0
+python-dotenv==1.0.0
+python-multipart==0.0.7
+
+# Clientes de IA
+groq==0.4.1
+openai
+
+# Generacion de PDFS
+pdfkit==1.0.0
+markdown2==2.4.10
+WeasyPrint==60.1
+xhtml2pdf
+Jinja2
+Markdown
+reportlab
+
+# Utilidades
+httpx==0.26.0
+
+# Base de datos
+sqlalchemy
+alembic
+psycopg2-binary
+
+# Procesamiento de texto y analisis
+nltk==3.8.1
+tiktoken==0.5.2
