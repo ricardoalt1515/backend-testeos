@@ -26,6 +26,18 @@ class Settings(BaseSettings):
         "*" if os.getenv("DEBUG", "False").lower() in ("true", "1", "t") else "",
     ]
 
+    # Configuracion de PostgreSQL
+    POSTGRES_USER: str = os.getenv("POSTGRES_USER", "hydrous")
+    POSTGRES_PASSWORD: str = os.getenv("POSTGRES_PASSWORD", "hydrous_password")
+    POSTGRES_SERVER: str = os.getenv("POSTGRES_SERVER", "localhost")
+    POSTGRES_PORT: str = os.getenv("POSTGRES_PORT", "5432")
+    POSTGRES_DB: str = os.getenv("POSTGRES_DB", "hydrous_db")
+
+    # URL de conexion SQLAlchemy
+    DATABASE_URL: str = (
+        f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_SERVER}:{POSTGRES_PORT}/{POSTGRES_DB}"
+    )
+
     # Configuración IA - Añadimos compatibilidad con los nombres antiguos y nuevos
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
     GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")

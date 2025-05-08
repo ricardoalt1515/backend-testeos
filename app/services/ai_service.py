@@ -146,27 +146,47 @@ class AIServiceLLMDriven:
             )
 
     def _prepare_messages(self, conversation: Conversation) -> List[Dict[str, str]]:
-        """Prepara los mensajes para la API, incluyendo el prompt dinámico."""
+        """Prepara los mensajes para la API, incluyendo el prompt dinámico e informacion del usuario."""
         logger.debug("DBG_AI_PREP: Iniciando preparación de mensajes...")
         try:
             # Generar el prompt maestro con el estado actual y el cuestionario
             current_metadata = conversation.metadata if conversation.metadata else {}
+
+            # Verificar si tenemos datos del sector/subsector
+            sector = current_metadata.get("selected_sector")
+            subsector = current_metadata.get("selected_subsector")
+            location = current_metadata.get("user_location")
+            client_name = current_metadata.get("client_name")
+
             logger.info(
-                f"Metadata para IA: client_name={current_metadata.get('client_name')}, sector={current_metadata.get('selected_sector')}, subsector={current_metadata.get('selected_subsector')}"
+                f"Datos de usuario en metadata: nombre={client_name}, sector={sector}, subsector{subsector}, ubicacion={location}"
             )
 
+            # Generar prompt principal
             system_prompt = get_llm_driven_master_prompt(current_metadata)
-
-            if "[ERROR" in system_prompt:
-                logger.error(
-                    f"Error detectado en system_prompt al cargar plantillas/cuestionario: {system_prompt}"
-                )
-                # Es crítico, lanzar excepción para detener el flujo
-                raise ValueError(
-                    "Fallo al generar system_prompt debido a error en carga de archivos."
-                )
-
             messages = [{"role": "system", "content": system_prompt}]
+
+            # Si tenemos informacion previa del usuario, añadir contexto adicional
+            if sector or subsector or location:
+                context_info = ["User pre-information:"]
+                if client_name and client_name != "Client":
+                    context_info.append(f"- Name: {client_name}")
+                if sector:
+                    context_info.append(f"- Sector: {sector}")
+                if subsector:
+                    context_info.append(f"- Subsector: {subsector}")
+                if location:
+                    context_info.append(f"- Ubicacion: {location}")
+
+                # Instruccion para la AI sobre como usar esta informacion
+                context_info.append(
+                    "Please adapt your introduction considering this information and avoid asking for data we already know."
+                )
+
+                # Añadir mensaje de contexto
+                context_message = {"role": "system", "content": "\n".join(context_info)}
+                messages.append(context_message)
+                logger.info("Added additional user context to the prompt.")
 
             # Añadir historial de conversación (si existe)
             if conversation.messages:

@@ -14,9 +14,8 @@ class Conversation(BaseModel):
 
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    user_id: Optional[str] = None
     messages: List[Message] = Field(default_factory=list)
-    # --- Cambiar state por metadata simple ---
-    # Quitar: state: ConversationState = Field(default_factory=ConversationState)
     metadata: Dict[str, Any] = Field(
         default_factory=lambda: {
             "current_question_id": None,
@@ -30,7 +29,7 @@ class Conversation(BaseModel):
             "pdf_path": None,
             "client_name": "Cliente",
             "last_error": None,
-            # Puedes añadir más campos según necesites
+            "user_location": None,
         }
     )
     # --------------------------------------
@@ -44,7 +43,7 @@ class Conversation(BaseModel):
         #     self.messages = self.messages[-MAX_HISTORY:]
 
     class Config:
-        allow_mutation = True
+        pass
 
 
 # Modelo para la respuesta al iniciar o cargar una conversación

@@ -4,8 +4,13 @@ from datetime import datetime, timedelta
 from typing import Dict, Optional, Any
 from passlib.context import CryptContext
 import uuid
+from uuid import UUID
+from sqlalchemy.orm import Session
+from fastapi import Depends
 
 from app.models.user import UserCreate, UserInDB, User, TokenData
+from app.repositories.user_repository import user_repository
+from app.db.base import get_db
 from app.config import settings
 
 # Configuración de logger
@@ -13,9 +18,6 @@ logger = logging.getLogger("hydrous")
 
 # Configuración de hashing para passwords
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-# Base de datos en memoria para usuarios (temporal)
-users_db: Dict[str, UserInDB] = {}
 
 
 class AuthService:
@@ -38,41 +40,32 @@ class AuthService:
         """Verifica si una contraseña coincide con el hash"""
         return pwd_context.verify(plain_password, hashed_password)
 
-    def create_user(self, user_data: UserCreate) -> User:
-        """Crea un nuevo usuario en el almacenamiento en memoria"""
+    def create_user(self, user_data: UserCreate, db: Session = Depends(get_db)) -> User:
+        """Crea un nuevo usuario en la base de datos"""
         try:
             # Verificar si el correo ya existe
-            for user in users_db.values():
-                if user.email.lower() == user_data.email.lower():
-                    logger.warning(
-                        f"Intento de registro con email duplicado: {user_data.email}"
-                    )
-                    raise ValueError("Email ya registrado")
+            db_user = user_repository.get_by_email(db, email=user_data.email)
+            if db_user:
+                logger.warning(
+                    f"Intento de registro con email duplicado: {user_data.email}"
+                )
+                raise ValueError("Email ya registrado")
 
             # Crear usuario con hash de contraseña
-            user_id = str(uuid.uuid4())
-            db_user = UserInDB(
-                id=user_id,
-                password_hash=self.get_password_hash(user_data.password),
-                email=user_data.email,
-                first_name=user_data.first_name,
-                last_name=user_data.last_name,
-                company_name=user_data.company_name,
-                location=user_data.location,
-                sector=user_data.sector,
-                subsector=user_data.subsector,
-                created_at=datetime.utcnow(),
+            hashed_password = self.get_password_hash(user_data.password)
+            db_user = user_repository.create_with_hashed_password(
+                db, obj_in=user_data, hashed_password=hashed_password
             )
 
-            # Guardar en "base de datos" en memoria
-            users_db[user_id] = db_user
+            if not db_user:
+                raise ValueError("Error al crear usuario en base de datos")
 
             # Log para debug
-            logger.info(f"Usuario creado: {user_id} - {user_data.email}")
+            logger.info(f"Usuario creado: {db_user.id} - {db_user.email}")
 
             # Devolver versión pública (sin password_hash)
             return User(
-                id=db_user.id,
+                id=str(db_user.id),
                 email=db_user.email,
                 first_name=db_user.first_name,
                 last_name=db_user.last_name,
@@ -86,36 +79,34 @@ class AuthService:
             logger.error(f"Error creando usuario: {str(e)}")
             raise
 
-    def authenticate_user(self, email: str, password: str) -> Optional[User]:
+    def authenticate_user(
+        self, email: str, password: str, db: Session = Depends(get_db)
+    ) -> Optional[User]:
         """Autentica un usuario por email y contraseña"""
         try:
             # Buscar usuario por email
-            user = None
-            for db_user in users_db.values():
-                if db_user.email.lower() == email.lower():
-                    user = db_user
-                    break
+            db_user = user_repository.get_by_email(db, email=email)
 
-            if not user:
+            if not db_user:
                 logger.warning(f"Intento de login con email no encontrado: {email}")
                 return None
 
             # Verificar contraseña
-            if not self.verify_password(password, user.password_hash):
+            if not self.verify_password(password, db_user.password_hash):
                 logger.warning(f"Intento de login con contraseña incorrecta: {email}")
                 return None
 
             # Devolver versión pública (sin password_hash)
             return User(
-                id=user.id,
-                email=user.email,
-                first_name=user.first_name,
-                last_name=user.last_name,
-                company_name=user.company_name,
-                location=user.location,
-                sector=user.sector,
-                subsector=user.subsector,
-                created_at=user.created_at,
+                id=str(db_user.id),
+                email=db_user.email,
+                first_name=db_user.first_name,
+                last_name=db_user.last_name,
+                company_name=db_user.company_name,
+                location=db_user.location,
+                sector=db_user.sector,
+                subsector=db_user.subsector,
+                created_at=db_user.created_at,
             )
         except Exception as e:
             logger.error(f"Error en autenticación: {str(e)}")
@@ -147,7 +138,9 @@ class AuthService:
             logger.error(f"Error creando token: {str(e)}")
             raise
 
-    async def verify_token(self, token: str) -> Optional[Dict[str, Any]]:
+    async def verify_token(
+        self, token: str, db: Session = Depends(get_db)
+    ) -> Optional[Dict[str, Any]]:
         """Verifica y decodifica un token JWT"""
         try:
             # Decodificar token
@@ -159,23 +152,26 @@ class AuthService:
                 return None
 
             # Verificar si el usuario existe
-            if user_id not in users_db:
-                logger.warning(f"Token con id de usuario no existente: {user_id}")
+            try:
+                user_uuid = UUID(user_id)
+                db_user = user_repository.get(db, id=user_uuid)
+                if not db_user:
+                    logger.warning(f"Token con id de usuario no existente: {user_id}")
+                    return None
+            except ValueError:
+                logger.warning(f"ID de usuario inválido en token: {user_id}")
                 return None
-
-            # Obtener datos del usuario
-            user = users_db[user_id]
 
             # Devolver datos básicos del usuario (sin incluir password_hash)
             return {
                 "id": user_id,
-                "email": user.email,
-                "first_name": user.first_name,
-                "last_name": user.last_name,
-                "company_name": user.company_name,
-                "location": user.location,
-                "sector": user.sector,
-                "subsector": user.subsector,
+                "email": db_user.email,
+                "first_name": db_user.first_name,
+                "last_name": db_user.last_name,
+                "company_name": db_user.company_name,
+                "location": db_user.location,
+                "sector": db_user.sector,
+                "subsector": db_user.subsector,
             }
         except jwt.ExpiredSignatureError:
             logger.warning("Token expirado")
@@ -187,16 +183,25 @@ class AuthService:
             logger.error(f"Error verificando token: {str(e)}")
             return None
 
-    def get_user_by_id(self, user_id: str) -> Optional[User]:
+    def get_user_by_id(
+        self, user_id: str, db: Session = Depends(get_db)
+    ) -> Optional[User]:
         """Obtiene un usuario por su ID"""
         try:
-            db_user = users_db.get(user_id)
+            # Validar ID
+            try:
+                user_uuid = UUID(user_id)
+            except ValueError:
+                logger.warning(f"ID de usuario inválido: {user_id}")
+                return None
+
+            db_user = user_repository.get(db, id=user_uuid)
             if not db_user:
                 return None
 
             # Devolver versión pública
             return User(
-                id=db_user.id,
+                id=str(db_user.id),
                 email=db_user.email,
                 first_name=db_user.first_name,
                 last_name=db_user.last_name,

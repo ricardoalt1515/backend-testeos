@@ -1,170 +1,127 @@
-# app/services/document_service.py
 import os
-import logging
 import uuid
-import re
+import logging
 from typing import Dict, Any, Optional, List
 from fastapi import UploadFile
-import shutil
 
 from app.config import settings
+from app.repositories import document_repository, unit_of_work
+from app.db.models.document import Document as DBDocument
+from app.models.document import Document
+from app.repositories.unit_of_work import unit_of_work
+
 
 logger = logging.getLogger("hydrous")
 
 
 class DocumentService:
-    """Servicio para procesar documentos subidos por usuarios"""
-
-    def __init__(self):
-        """Inicialización del servicio"""
-        # Crear directorio de uploads si no existe
-        os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
-
-        # Registro de documentos
-        self.documents = {}
+    """Servicio para manejo de documentos subidos"""
 
     async def process_document(
         self, file: UploadFile, conversation_id: str
     ) -> Dict[str, Any]:
-        """Procesa un documento subido por un usuario"""
+        """Procesa un documento subido"""
         try:
-            # Generar ID único para el documento
-            doc_id = str(uuid.uuid4())
+            # Generar nombre único y guardar archivo
+            file_extension = os.path.splitext(file.filename)[1]
+            unique_filename = f"{uuid.uuid4()}{file_extension}"
+            file_path = os.path.join(settings.UPLOAD_DIR, unique_filename)
 
-            # Guardar el archivo físicamente
-            file_ext = os.path.splitext(file.filename)[1]
-            save_path = os.path.join(settings.UPLOAD_DIR, f"{doc_id}{file_ext}")
+            # Guardar archivo físicamente
+            content = await file.read()
+            with open(file_path, "wb") as f:
+                f.write(content)
 
-            with open(save_path, "wb") as dest_file:
-                shutil.copyfileobj(file.file, dest_file)
+            # Extraer texto o información básica
+            processed_text = f"Documento {file.filename} subido correctamente"
 
-            # Intentar extraer información relevante según el tipo de archivo
-            extracted_info = await self._extract_document_info(
-                save_path, file.filename, file.content_type
-            )
+            # Guardar información en la base de datos
+            with unit_of_work() as db:
+                db_document = DBDocument(
+                    conversation_id=uuid.UUID(conversation_id),
+                    filename=file.filename,
+                    file_path=file_path,
+                    content_type=file.content_type,
+                    processed_text=processed_text,
+                )
 
-            # Registrar documento
-            doc_info = {
-                "id": doc_id,
-                "filename": file.filename,
-                "content_type": file.content_type,
-                "path": save_path,
-                "conversation_id": conversation_id,
-                "extracted_info": extracted_info,
-            }
+                db.add(db_document)
+                db.commit()
+                db.refresh(db_document)
 
-            self.documents[doc_id] = doc_info
+                # Convertir a diccionario
+                document_info = {
+                    "id": str(db_document.id),
+                    "conversation_id": conversation_id,
+                    "filename": db_document.filename,
+                    "file_path": db_document.file_path,
+                    "content_type": db_document.content_type,
+                    "processed_text": db_document.processed_text,
+                    "created_at": db_document.created_at.isoformat(),
+                }
 
-            return doc_info
+            logger.info(f"Documento procesado y guardado: {file.filename}")
+            return document_info
 
         except Exception as e:
-            logger.error(f"Error al procesar documento: {str(e)}")
-            raise
+            logger.error(f"Error procesando documento: {e}", exc_info=True)
+            raise ValueError(f"Error procesando documento: {str(e)}")
 
-    async def _extract_document_info(
-        self, file_path: str, filename: str, content_type: str
-    ) -> Dict[str, Any]:
-        """Extrae información básica de un documento"""
-        info = {
-            "summary": f"Documento: {filename}",
-            "type": "unknown",
-            "parameters": {},
-        }
+    def get_document(self, document_id: str) -> Optional[Document]:
+        """Obtiene información de un documento por ID"""
+        try:
+            with unit_of_work() as db:
+                db_document = document_repository.get(db, uuid.UUID(document_id))
 
-        # Determinar tipo de documento basado en nombre y extensión
-        if "factura" in filename.lower() or "recibo" in filename.lower():
-            info["type"] = "invoice"
-            info["summary"] = "Factura o recibo de agua"
+                if not db_document:
+                    return None
 
-            # Extraer información básica si es un texto
-            try:
-                with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                    text = f.read()
-
-                # Buscar patrones comunes en facturas
-                date_match = re.search(r"(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})", text)
-                if date_match:
-                    info["parameters"]["fecha"] = date_match.group(1)
-
-                consumption_match = re.search(r"consumo:?\s*(\d+)", text, re.IGNORECASE)
-                if consumption_match:
-                    info["parameters"]["consumo"] = consumption_match.group(1)
-
-                amount_match = re.search(
-                    r"total:?\s*\$?\s*(\d+(?:\.\d+)?)", text, re.IGNORECASE
+                return Document(
+                    id=str(db_document.id),
+                    conversation_id=str(db_document.conversation_id),
+                    filename=db_document.filename,
+                    file_path=db_document.file_path,
+                    content_type=db_document.content_type,
+                    processed_text=db_document.processed_text,
+                    created_at=db_document.created_at,
                 )
-                if amount_match:
-                    info["parameters"]["importe"] = amount_match.group(1)
+        except Exception as e:
+            logger.error(f"Error obteniendo documento: {e}", exc_info=True)
+            return None
 
-            except Exception as e:
-                logger.warning(f"Error al procesar texto de factura: {str(e)}")
+    def get_conversation_documents(self, conversation_id: str) -> List[Document]:
+        """Obtiene todos los documentos de una conversación"""
+        try:
+            with unit_of_work() as db:
+                db_documents = document_repository.get_by_conversation(
+                    db, uuid.UUID(conversation_id)
+                )
 
-        elif "analisis" in filename.lower() or "laboratorio" in filename.lower():
-            info["type"] = "lab_analysis"
-            info["summary"] = "Análisis de laboratorio de agua"
-
-            # Extraer información básica si es un texto
-            try:
-                with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                    text = f.read()
-
-                # Buscar parámetros comunes en análisis de agua
-                params = [
-                    ("pH", r"pH[:\s]+(\d+(?:\.\d+)?)"),
-                    ("DBO", r"DBO[:\s]+(\d+(?:\.\d+)?)"),
-                    ("DQO", r"DQO[:\s]+(\d+(?:\.\d+)?)"),
-                    ("SST", r"SST[:\s]+(\d+(?:\.\d+)?)"),
-                    ("conductividad", r"conductividad[:\s]+(\d+(?:\.\d+)?)"),
+                return [
+                    Document(
+                        id=str(doc.id),
+                        conversation_id=str(doc.conversation_id),
+                        filename=doc.filename,
+                        file_path=doc.file_path,
+                        content_type=doc.content_type,
+                        processed_text=doc.processed_text,
+                        created_at=doc.created_at,
+                    )
+                    for doc in db_documents
                 ]
-
-                for param, pattern in params:
-                    match = re.search(pattern, text, re.IGNORECASE)
-                    if match:
-                        info["parameters"][param] = match.group(1)
-
-            except Exception as e:
-                logger.warning(f"Error al procesar texto de análisis: {str(e)}")
-
-        elif content_type.startswith("image/"):
-            info["type"] = "image"
-            info["summary"] = (
-                "Imagen que podría mostrar instalaciones o equipos de tratamiento de agua"
+        except Exception as e:
+            logger.error(
+                f"Error obteniendo documentos de conversación: {e}", exc_info=True
             )
-
-        return info
+            return []
 
     def format_document_info_for_prompt(self, doc_info: Dict[str, Any]) -> str:
-        """Formatea información del documento para incluir en el prompt"""
-        doc_type = doc_info.get("type", "unknown")
-        summary = doc_info.get("extracted_info", {}).get(
-            "summary", f"Documento: {doc_info['filename']}"
-        )
-        parameters = doc_info.get("extracted_info", {}).get("parameters", {})
-
-        formatted_text = f"[DOCUMENTO ADJUNTO: {doc_info['filename']}]\n"
-        formatted_text += f"Tipo: {doc_type}\n"
-        formatted_text += f"Resumen: {summary}\n"
-
-        if parameters:
-            formatted_text += "Información extraída:\n"
-            for key, value in parameters.items():
-                formatted_text += f"- {key}: {value}\n"
-
-        return formatted_text
-
-    async def get_document(self, doc_id: str) -> Optional[Dict[str, Any]]:
-        """Obtiene información de un documento por su ID"""
-        return self.documents.get(doc_id)
-
-    async def get_documents_for_conversation(
-        self, conversation_id: str
-    ) -> List[Dict[str, Any]]:
-        """Obtiene todos los documentos asociados a una conversación"""
-        return [
-            doc
-            for doc in self.documents.values()
-            if doc["conversation_id"] == conversation_id
-        ]
+        """Formatea la información del documento para incluir en el prompt"""
+        return f"""
+Documento: {doc_info.get('filename')}
+Tipo: {doc_info.get('content_type', 'Desconocido')}
+Contenido: {doc_info.get('processed_text', 'Sin procesar')}
+        """.strip()
 
 
 # Instancia global

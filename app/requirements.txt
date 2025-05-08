@@ -26,6 +26,7 @@ httpx==0.26.0
 sqlalchemy
 alembic
 psycopg2-binary
+pgvector
 
 # Procesamiento de texto y analisis
 nltk==3.8.1

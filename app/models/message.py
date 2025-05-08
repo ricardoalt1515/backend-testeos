@@ -27,7 +27,7 @@ class Message(BaseModel):
         return cls(role="assistant", content=content)
 
     class Config:
-        allow_mutation = True  # Permite modificar el objeto después de crearlo
+        pass  # Permite modificar el objeto después de crearlo
 
 
 # --- AÑADIR ESTA CLASE AQUÍ ---

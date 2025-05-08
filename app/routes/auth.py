@@ -4,6 +4,8 @@ import logging
 
 from app.models.user import UserCreate, User, LoginRequest
 from app.services.auth_service import auth_service
+from app.db.base import get_db
+from sqlalchemy.orm import Session
 
 # Configuración del logger
 logger = logging.getLogger("hydrous")
@@ -13,11 +15,11 @@ router = APIRouter()
 
 
 @router.post("/register", response_model=dict)
-async def register_user(user_data: UserCreate):
+async def register_user(user_data: UserCreate, db: Session = Depends(get_db)):
     """Registra un nuevo usuario"""
     try:
         # Crear usuario
-        user = auth_service.create_user(user_data)
+        user = auth_service.create_user(user_data, db=db)
 
         # Generar token
         token_data = auth_service.create_access_token(user.id)

@@ -1,6 +1,7 @@
 # app/routes/chat.py
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Header, Depends
 from fastapi.responses import FileResponse
+from sqlalchemy.orm import Session
 import logging
 import os
 import uuid  # Importar uuid
@@ -23,7 +24,9 @@ from app.services.proposal_service import (
 from app.services.questionnaire_service import (
     questionnaire_service,
 )  # Para obtener IDs/detalles preguntas
+from app.services.auth_service import auth_service
 from app.config import settings
+from app.db.base import get_db
 
 router = APIRouter()
 logger = logging.getLogger("hydrous")
@@ -126,11 +129,42 @@ class ConversationStartRequest(BaseModel):
 
 
 @router.post("/start", response_model=ConversationResponse)
-async def start_conversation(request_data: Optional[ConversationStartRequest] = None):
-    """Inicia conversación, Recibiendo contexto del usuario si existe."""
+async def start_conversation(
+    request_data: Optional[ConversationStartRequest] = None,
+    db: Session = Depends(get_db),
+):
+    """Inicia conversación, extrayendo contexto del usuario autenticado y/o context personalizado."""
     try:
-        conversation = await storage_service.create_conversation()
+        conversation = await storage_service.create_conversation(db=db)
         logger.info(f"Nueva conversacion iniciada (ID: {conversation.id})")
+
+        # Extraer informacion del usuario autenticado si hay token
+        if authorization and authorization.startswith("Bearer "):
+            token = authorization.replace("Bearer ", "")
+            user_data = await auth_service.verify_token(token)
+
+            if user_data:
+                # vincular la conversacion del usuario
+                conversation.user_id = user_data["id"]
+                logger.info(f"Conversación vinculada a usuario: {user_data['id']}")
+
+                # Obtener ususario completo
+                user = auth_service.get_user_by_id(user_data["id"])
+                if user:
+                    # Transferir datos del usuario a la metadata
+                    conversation.metadata["client_name"] = (
+                        f"{user.first_name} {user.last_name}"
+                    )
+                    if user.sector:
+                        conversation.metadata["selected_sector"] = user.sector
+                    if user.subsector:
+                        conversation.metadata["selected_subsector"] = user.subsector
+                    if user._location:
+                        conversation.metadata["user_location"] = user._location
+
+                    logger.info(
+                        f"Metadata cargada del ususario: sector={user.sector}, subsector={user.subsector}"
+                    )
 
         # Procesar contexto del usuario si existe
         if request_data and request_data.customContext:
@@ -152,10 +186,9 @@ async def start_conversation(request_data: Optional[ConversationStartRequest] = 
             if "user_location" in context:
                 conversation.metadata["user_location"] = context["user_location"]
 
-            logger.info(f"Metadata actualizada con contexto: {conversation.metadata}")
-
         # Guardar conversación con la metadata actualizada
         await storage_service.save_conversation(conversation)
+        logger.info(f"Metadata final de conversacion: {conversation.metadata}")
 
         # Devolver respuesta
         return ConversationResponse(
@@ -172,7 +205,11 @@ async def start_conversation(request_data: Optional[ConversationStartRequest] = 
 
 
 @router.post("/message")
-async def send_message(data: MessageCreate, background_tasks: BackgroundTasks):
+async def send_message(
+    data: MessageCreate,
+    background_tasks: BackgroundTasks,
+    authorization: Optional[str] = Header(None),
+):
     """
     Procesa mensaje usuario. Si es el último, genera propuesta y PDF automáticamente.
     Si el usuario pide 'descargar pdf' (y ya está lista), dispara la descarga.
@@ -181,9 +218,31 @@ async def send_message(data: MessageCreate, background_tasks: BackgroundTasks):
     """
     conversation_id = data.conversation_id
     user_input = data.message
-    assistant_response_data = None  # Para guardar la respuesta a enviar al frontend
 
     try:
+        # Verificar permisos si hay token
+        if authorization and authorization.startswith("Bearer "):
+            token = authorization.replace("Bearer ", "")
+            user_data = await auth_service.verify_token(token)
+
+            # Si hay usuario autenticado y la conversation tiene ususario asignado
+            if user_data:
+                conversation = await storage_service.get_conversation(conversation_id)
+                if (
+                    conversation
+                    and conversation.user_id
+                    and conversation.user_id != user_data["id"]
+                ):
+                    logger.warning(
+                        f"Acceso denengado: Usuario {user_data['id']} intento acceder a conversacion {conversation_id} de otro usuario"
+                    )
+                    return {
+                        "id": "error-unauthorized",
+                        "message": "you do not have permission to access this conversation",
+                        "conversation_id": conversation_id,
+                        "created_at": datetime.utcnow(),
+                    }
+
         # 1. Cargar Conversación
         logger.debug(f"Recibida petición /message para conv: {conversation_id}")
         conversation = await storage_service.get_conversation(conversation_id)
