@@ -4,7 +4,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 import logging
 import os
-import uuid  # Importar uuid
+from uuid import UUID  # Importar uuid
 import re
 from datetime import datetime  # Importar datetime
 from typing import Any, Optional, Dict, List  # Añadir Optional y Dict
@@ -24,6 +24,7 @@ from app.services.proposal_service import (
 from app.services.questionnaire_service import (
     questionnaire_service,
 )  # Para obtener IDs/detalles preguntas
+from app.repositories.conversation_repository import conversation_repository
 from app.services.auth_service import auth_service
 from app.config import settings
 from app.db.base import get_db
@@ -131,43 +132,47 @@ class ConversationStartRequest(BaseModel):
 @router.post("/start", response_model=ConversationResponse)
 async def start_conversation(
     request_data: Optional[ConversationStartRequest] = None,
+    authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db),
 ):
-    """Inicia conversación, extrayendo contexto del usuario autenticado y/o context personalizado."""
+    """Inicia conversación, Recibiendo contexto del usuario si existe."""
     try:
-        conversation = await storage_service.create_conversation(db=db)
+        # Crear conversación
+        conversation = await storage_service.create_conversation(db)
         logger.info(f"Nueva conversacion iniciada (ID: {conversation.id})")
 
-        # Extraer informacion del usuario autenticado si hay token
+        # Asociar con usuario si hay token de autorización
+        user_id = None
         if authorization and authorization.startswith("Bearer "):
-            token = authorization.replace("Bearer ", "")
-            user_data = await auth_service.verify_token(token)
+            try:
+                # Extraer token
+                token = authorization.replace("Bearer ", "")
 
-            if user_data:
-                # vincular la conversacion del usuario
-                conversation.user_id = user_data["id"]
-                logger.info(f"Conversación vinculada a usuario: {user_data['id']}")
+                # Verificar token
+                user_data = await auth_service.verify_token(token, db)
 
-                # Obtener ususario completo
-                user = auth_service.get_user_by_id(user_data["id"])
-                if user:
-                    # Transferir datos del usuario a la metadata
-                    conversation.metadata["client_name"] = (
-                        f"{user.first_name} {user.last_name}"
+                if user_data and "id" in user_data:
+                    # Actualizar la conversación con el ID del usuario
+                    user_id = user_data["id"]
+                    db_conversation = conversation_repository.get(
+                        db, UUID(conversation.id)
                     )
-                    if user.sector:
-                        conversation.metadata["selected_sector"] = user.sector
-                    if user.subsector:
-                        conversation.metadata["selected_subsector"] = user.subsector
-                    if user._location:
-                        conversation.metadata["user_location"] = user._location
-
-                    logger.info(
-                        f"Metadata cargada del ususario: sector={user.sector}, subsector={user.subsector}"
-                    )
+                    if db_conversation:
+                        db_conversation.user_id = UUID(user_id)
+                        db.commit()
+                        logger.info(
+                            f"Conversación {conversation.id} asociada al usuario {user_id}"
+                        )
+            except Exception as auth_err:
+                # Continuar sin asociar a un usuario en caso de error
+                logger.warning(
+                    f"No se pudo asociar la conversación a un usuario: {auth_err}"
+                )
 
         # Procesar contexto del usuario si existe
-        if request_data and request_data.customContext:
+        if (
+            request_data and request_data.customContext
+        ):  # Corregido: request_data en lugar de request_Data
             context = request_data.customContext
             logger.info(f"Contexto recibido: {context}")
 
@@ -186,9 +191,10 @@ async def start_conversation(
             if "user_location" in context:
                 conversation.metadata["user_location"] = context["user_location"]
 
+            logger.info(f"Metadata actualizada con contexto: {conversation.metadata}")
+
         # Guardar conversación con la metadata actualizada
         await storage_service.save_conversation(conversation)
-        logger.info(f"Metadata final de conversacion: {conversation.metadata}")
 
         # Devolver respuesta
         return ConversationResponse(

@@ -6,7 +6,6 @@ from passlib.context import CryptContext
 import uuid
 from uuid import UUID
 from sqlalchemy.orm import Session
-from fastapi import Depends
 
 from app.models.user import UserCreate, UserInDB, User, TokenData
 from app.repositories.user_repository import user_repository
@@ -17,7 +16,7 @@ from app.config import settings
 logger = logging.getLogger("hydrous")
 
 # Configuración de hashing para passwords
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=12)
 
 
 class AuthService:
@@ -40,7 +39,7 @@ class AuthService:
         """Verifica si una contraseña coincide con el hash"""
         return pwd_context.verify(plain_password, hashed_password)
 
-    def create_user(self, user_data: UserCreate, db: Session = Depends(get_db)) -> User:
+    def create_user(self, user_data: UserCreate, db: Session) -> User:
         """Crea un nuevo usuario en la base de datos"""
         try:
             # Verificar si el correo ya existe
@@ -80,7 +79,7 @@ class AuthService:
             raise
 
     def authenticate_user(
-        self, email: str, password: str, db: Session = Depends(get_db)
+        self, email: str, password: str, db: Session
     ) -> Optional[User]:
         """Autentica un usuario por email y contraseña"""
         try:
@@ -139,40 +138,59 @@ class AuthService:
             raise
 
     async def verify_token(
-        self, token: str, db: Session = Depends(get_db)
+        self, token: str, db: Session = None
     ) -> Optional[Dict[str, Any]]:
         """Verifica y decodifica un token JWT"""
         try:
-            # Decodificar token
-            payload = jwt.decode(token, self.SECRET_KEY, algorithms=[self.ALGORITHM])
-            user_id = payload.get("sub")
+            # Si no se pasó una sesión, crear una nueva
+            if db is None:
+                from app.repositories.base import SessionLocal
 
-            if user_id is None:
-                logger.warning("Token sin id de usuario")
-                return None
+                db = SessionLocal()
+                close_session = True
+            else:
+                close_session = False
 
-            # Verificar si el usuario existe
             try:
-                user_uuid = UUID(user_id)
-                db_user = user_repository.get(db, id=user_uuid)
-                if not db_user:
-                    logger.warning(f"Token con id de usuario no existente: {user_id}")
-                    return None
-            except ValueError:
-                logger.warning(f"ID de usuario inválido en token: {user_id}")
-                return None
+                # Decodificar token
+                payload = jwt.decode(
+                    token, self.SECRET_KEY, algorithms=[self.ALGORITHM]
+                )
+                user_id = payload.get("sub")
 
-            # Devolver datos básicos del usuario (sin incluir password_hash)
-            return {
-                "id": user_id,
-                "email": db_user.email,
-                "first_name": db_user.first_name,
-                "last_name": db_user.last_name,
-                "company_name": db_user.company_name,
-                "location": db_user.location,
-                "sector": db_user.sector,
-                "subsector": db_user.subsector,
-            }
+                if user_id is None:
+                    logger.warning("Token sin id de usuario")
+                    return None
+
+                # Verificar si el usuario existe
+                try:
+                    user_uuid = UUID(user_id)
+                    db_user = user_repository.get(db, id=user_uuid)
+                    if not db_user:
+                        logger.warning(
+                            f"Token con id de usuario no existente: {user_id}"
+                        )
+                        return None
+                except ValueError:
+                    logger.warning(f"ID de usuario inválido en token: {user_id}")
+                    return None
+
+                # Devolver datos básicos del usuario (sin incluir password_hash)
+                return {
+                    "id": user_id,
+                    "email": db_user.email,
+                    "first_name": db_user.first_name,
+                    "last_name": db_user.last_name,
+                    "company_name": db_user.company_name,
+                    "location": db_user.location,
+                    "sector": db_user.sector,
+                    "subsector": db_user.subsector,
+                }
+            finally:
+                # Cerrar sesión si fue creada aquí
+                if close_session:
+                    db.close()
+
         except jwt.ExpiredSignatureError:
             logger.warning("Token expirado")
             return None
@@ -183,9 +201,7 @@ class AuthService:
             logger.error(f"Error verificando token: {str(e)}")
             return None
 
-    def get_user_by_id(
-        self, user_id: str, db: Session = Depends(get_db)
-    ) -> Optional[User]:
+    def get_user_by_id(self, user_id: str, db: Session) -> Optional[User]:
         """Obtiene un usuario por su ID"""
         try:
             # Validar ID

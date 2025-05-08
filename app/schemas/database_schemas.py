@@ -58,7 +58,7 @@ class ConversationDB(ConversationBase):
     user_id: Optional[UUID] = None
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 # Esquemas para Message
@@ -81,7 +81,7 @@ class MessageDB(MessageBase):
     conversation_id: UUID
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 # Esquemas para ConversationMetadata
@@ -104,7 +104,7 @@ class MetadataDB(MetadataBase):
     conversation_id: UUID
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 # Esquemas para Document
@@ -129,4 +129,4 @@ class DocumentDB(DocumentBase):
     conversation_id: UUID
 
     class Config:
-        orm_mode = True
+        from_attributes = True

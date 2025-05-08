@@ -1,11 +1,11 @@
 from fastapi import APIRouter, HTTPException, Depends, Header
 from typing import Optional
 import logging
+from sqlalchemy.orm import Session
 
 from app.models.user import UserCreate, User, LoginRequest
 from app.services.auth_service import auth_service
 from app.db.base import get_db
-from sqlalchemy.orm import Session
 
 # Configuración del logger
 logger = logging.getLogger("hydrous")
@@ -19,7 +19,7 @@ async def register_user(user_data: UserCreate, db: Session = Depends(get_db)):
     """Registra un nuevo usuario"""
     try:
         # Crear usuario
-        user = auth_service.create_user(user_data, db=db)
+        user = auth_service.create_user(user_data, db)
 
         # Generar token
         token_data = auth_service.create_access_token(user.id)
@@ -53,11 +53,11 @@ async def register_user(user_data: UserCreate, db: Session = Depends(get_db)):
 
 
 @router.post("/login", response_model=dict)
-async def login_user(login_data: LoginRequest):
+async def login_user(login_data: LoginRequest, db: Session = Depends(get_db)):
     """Inicia sesión de usuario"""
     try:
         # Autenticar usuario
-        user = auth_service.authenticate_user(login_data.email, login_data.password)
+        user = auth_service.authenticate_user(login_data.email, login_data.password, db)
 
         if not user:
             raise HTTPException(
@@ -97,7 +97,9 @@ async def login_user(login_data: LoginRequest):
 
 
 @router.get("/verify", response_model=dict)
-async def verify_token(authorization: Optional[str] = Header(None)):
+async def verify_token(
+    authorization: Optional[str] = Header(None), db: Session = Depends(get_db)
+):
     """Verifica si un token es válido"""
     try:
         # Verificar que hay un token
@@ -112,7 +114,7 @@ async def verify_token(authorization: Optional[str] = Header(None)):
         token = authorization.replace("Bearer ", "")
 
         # Verificar token
-        user_data = await auth_service.verify_token(token)
+        user_data = await auth_service.verify_token(token, db)
 
         if not user_data:
             raise HTTPException(
@@ -133,7 +135,9 @@ async def verify_token(authorization: Optional[str] = Header(None)):
 
 
 @router.get("/me", response_model=dict)
-async def get_current_user(authorization: Optional[str] = Header(None)):
+async def get_current_user(
+    authorization: Optional[str] = Header(None), db: Session = Depends(get_db)
+):
     """Obtiene información del usuario actual"""
     try:
         # Verificar que hay un token
@@ -148,7 +152,7 @@ async def get_current_user(authorization: Optional[str] = Header(None)):
         token = authorization.replace("Bearer ", "")
 
         # Verificar token
-        user_data = await auth_service.verify_token(token)
+        user_data = await auth_service.verify_token(token, db)
 
         if not user_data:
             raise HTTPException(
@@ -158,7 +162,7 @@ async def get_current_user(authorization: Optional[str] = Header(None)):
             )
 
         # Obtener usuario completo
-        user = auth_service.get_user_by_id(user_data["id"])
+        user = auth_service.get_user_by_id(user_data["id"], db)
 
         if not user:
             raise HTTPException(
