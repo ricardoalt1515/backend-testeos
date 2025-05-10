@@ -6,6 +6,7 @@ from passlib.context import CryptContext
 import uuid
 from uuid import UUID
 from sqlalchemy.orm import Session
+from fastapi import Depends
 
 from app.models.user import UserCreate, UserInDB, User, TokenData
 from app.repositories.user_repository import user_repository
@@ -15,7 +16,7 @@ from app.config import settings
 # Configuración de logger
 logger = logging.getLogger("hydrous")
 
-# Configuración de hashing para passwords
+# Configuración de hashing para passwords - Corregido
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=12)
 
 

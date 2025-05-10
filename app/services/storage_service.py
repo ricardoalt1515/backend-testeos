@@ -24,9 +24,7 @@ class StorageService:
     Servicio de almacenamiento refactorizado para usar PostgreSQL
     """
 
-    async def create_conversation(
-        self, db: Session = Depends(get_db)
-    ) -> PydanticConversation:
+    async def create_conversation(self, db: Session) -> PydanticConversation:
         """Crea y almacena una nueva conversación con metadata inicial."""
         initial_metadata = {
             "current_question_id": None,
@@ -54,6 +52,7 @@ class StorageService:
                 "client_name": "Cliente",
                 "proposal_text": None,
                 "pdf_path": None,
+                "user_id": None,
             },
             metadata=initial_metadata,
         )
@@ -247,7 +246,9 @@ class StorageService:
 
     async def cleanup_old_conversations(self):
         """Elimina conversaciones más antiguas que el timeout."""
-        with Session(conversation_repository._session.engine) as db:
+        # Obtener nueva sesión
+        db = conversation_repository.get_session()
+        try:
             # Obtener conversaciones antiguas
             old_conversations = conversation_repository.get_old_conversations(
                 db, older_than_seconds=settings.CONVERSATION_TIMEOUT
@@ -268,6 +269,8 @@ class StorageService:
                 logger.info(
                     f"Limpieza completada. {removed_count} conversaciones antiguas eliminadas."
                 )
+        finally:
+            db.close()
 
 
 # Instancia global
