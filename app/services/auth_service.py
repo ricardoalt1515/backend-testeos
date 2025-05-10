@@ -137,60 +137,39 @@ class AuthService:
             logger.error(f"Error creando token: {str(e)}")
             raise
 
-    async def verify_token(
-        self, token: str, db: Session = None
-    ) -> Optional[Dict[str, Any]]:
+    async def verify_token(self, token: str, db: Session) -> Optional[Dict[str, Any]]:
         """Verifica y decodifica un token JWT"""
         try:
-            # Si no se pasó una sesión, crear una nueva
-            if db is None:
-                from app.repositories.base import SessionLocal
+            # Decodificar token
+            payload = jwt.decode(token, self.SECRET_KEY, algorithms=[self.ALGORITHM])
+            user_id = payload.get("sub")
 
-                db = SessionLocal()
-                close_session = True
-            else:
-                close_session = False
+            if user_id is None:
+                logger.warning("Token sin id de usuario")
+                return None
 
+            # Verificar si el usuario existe
             try:
-                # Decodificar token
-                payload = jwt.decode(
-                    token, self.SECRET_KEY, algorithms=[self.ALGORITHM]
-                )
-                user_id = payload.get("sub")
-
-                if user_id is None:
-                    logger.warning("Token sin id de usuario")
+                user_uuid = UUID(user_id)
+                db_user = user_repository.get(db, id=user_uuid)
+                if not db_user:
+                    logger.warning(f"Token con id de usuario no existente: {user_id}")
                     return None
+            except ValueError:
+                logger.warning(f"ID de usuario inválido en token: {user_id}")
+                return None
 
-                # Verificar si el usuario existe
-                try:
-                    user_uuid = UUID(user_id)
-                    db_user = user_repository.get(db, id=user_uuid)
-                    if not db_user:
-                        logger.warning(
-                            f"Token con id de usuario no existente: {user_id}"
-                        )
-                        return None
-                except ValueError:
-                    logger.warning(f"ID de usuario inválido en token: {user_id}")
-                    return None
-
-                # Devolver datos básicos del usuario (sin incluir password_hash)
-                return {
-                    "id": user_id,
-                    "email": db_user.email,
-                    "first_name": db_user.first_name,
-                    "last_name": db_user.last_name,
-                    "company_name": db_user.company_name,
-                    "location": db_user.location,
-                    "sector": db_user.sector,
-                    "subsector": db_user.subsector,
-                }
-            finally:
-                # Cerrar sesión si fue creada aquí
-                if close_session:
-                    db.close()
-
+            # Devolver datos básicos del usuario (sin incluir password_hash)
+            return {
+                "id": user_id,
+                "email": db_user.email,
+                "first_name": db_user.first_name,
+                "last_name": db_user.last_name,
+                "company_name": db_user.company_name,
+                "location": db_user.location,
+                "sector": db_user.sector,
+                "subsector": db_user.subsector,
+            }
         except jwt.ExpiredSignatureError:
             logger.warning("Token expirado")
             return None

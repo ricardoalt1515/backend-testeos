@@ -31,7 +31,11 @@ class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
     def __init__(self, model: Type[ModelType]):
         """Inicializa con el modelo SQLAlchemy"""
         self.model = model
-        self._session = SessionLocal
+        self.engine = engine  # Cambiado: guardamos directamente el engine
+
+    def get_session(self):
+        """Obtener una nueva sesión de base de datos"""
+        return SessionLocal()
 
     def get(self, db: Session, id: UUID) -> Optional[ModelType]:
         """Obtener un registro por ID"""

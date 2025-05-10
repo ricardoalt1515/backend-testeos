@@ -76,7 +76,7 @@ class StorageService:
         return conversation
 
     async def get_conversation(
-        self, conversation_id: str
+        self, conversation_id: str, db: Session
     ) -> Optional[PydanticConversation]:
         """Obtiene una conversación por su ID desde la base de datos."""
         # Validar ID
@@ -87,65 +87,62 @@ class StorageService:
             return None
 
         # Obtener conversación y sus mensajes
-        with Session(conversation_repository._session.engine) as db:
-            db_conversation = conversation_repository.get(db, conversation_uuid)
+        db_conversation = conversation_repository.get(db, conversation_uuid)
 
-            if not db_conversation:
-                logger.warning(f"DBG_SS: Conversación {conversation_id} NO encontrada.")
-                return None
+        if not db_conversation:
+            logger.warning(f"DBG_SS: Conversación {conversation_id} NO encontrada.")
+            return None
 
-            # Obtener mensajes
-            db_messages = message_repository.get_by_conversation_id(
-                db, conversation_uuid
-            )
+        # Obtener mensajes
+        db_messages = message_repository.get_by_conversation_id(db, conversation_uuid)
 
-            # Obtener metadata
-            metadata = conversation_repository.get_metadata(
-                db, conversation_id=conversation_uuid
-            )
+        # Obtener metadata
+        metadata = conversation_repository.get_metadata(
+            db, conversation_id=conversation_uuid
+        )
 
-            # Si no hay metadata, usar valores predeterminados
-            if not metadata:
-                metadata = {
-                    "current_question_id": None,
-                    "collected_data": {},
-                    "selected_sector": None,
-                    "selected_subsector": None,
-                    "questionnaire_path": [],
-                    "is_complete": False,
-                    "has_proposal": False,
-                    "proposal_text": None,
-                    "pdf_path": None,
-                    "client_name": "Cliente",
-                    "last_error": None,
-                }
+        # Si no hay metadata, usar valores predeterminados
+        if not metadata:
+            metadata = {
+                "current_question_id": None,
+                "collected_data": {},
+                "selected_sector": None,
+                "selected_subsector": None,
+                "questionnaire_path": [],
+                "is_complete": False,
+                "has_proposal": False,
+                "proposal_text": None,
+                "pdf_path": None,
+                "client_name": "Cliente",
+                "last_error": None,
+            }
 
-            # Convertir a modelo Pydantic
-            pydantic_messages = []
-            for msg in db_messages:
-                pydantic_messages.append(
-                    PydanticMessage(
-                        id=str(msg.id),
-                        role=msg.role.value,
-                        content=msg.content,
-                        created_at=msg.created_at,
-                    )
+        # Convertir a modelo Pydantic
+        pydantic_messages = []
+        for msg in db_messages:
+            pydantic_messages.append(
+                PydanticMessage(
+                    id=str(msg.id),
+                    role=msg.role.value,
+                    content=msg.content,
+                    created_at=msg.created_at,
                 )
-
-            conversation = PydanticConversation(
-                id=str(db_conversation.id),
-                created_at=db_conversation.created_at,
-                messages=pydantic_messages,
-                metadata=metadata,
             )
 
-            logger.info(
-                f"DBG_SS: Conversación {conversation_id} RECUPERADA. Metadata actual: {metadata}"
-            )
-            return conversation
+        conversation = PydanticConversation(
+            id=str(db_conversation.id),
+            created_at=db_conversation.created_at,
+            messages=pydantic_messages,
+            metadata=metadata,
+        )
+
+        logger.info(
+            f"DBG_SS: Conversación {conversation_id} RECUPERADA. Metadata actual: {metadata}"
+        )
+        return conversation
 
     async def add_message_to_conversation(
-        self, conversation_id: str, message: PydanticMessage
+        self, conversation_id: str, message: PydanticMessage, db: Session
     ) -> bool:
         """Añade un mensaje a la conversación en la base de datos."""
         # Validar ID
@@ -155,43 +152,44 @@ class StorageService:
             logger.error(f"DBG_SS: ID de conversación inválido: {conversation_id}")
             return False
 
-        with Session(message_repository._session.engine) as db:
-            # Verificar que la conversación existe
-            db_conversation = conversation_repository.get(db, conversation_uuid)
-            if not db_conversation:
-                logger.error(
-                    f"DBG_SS: Error al añadir mensaje, conversación {conversation_id} no encontrada."
-                )
-                return False
+        # Verificar que la conversación existe
+        db_conversation = conversation_repository.get(db, conversation_uuid)
+        if not db_conversation:
+            logger.error(
+                f"DBG_SS: Error al añadir mensaje, conversación {conversation_id} no encontrada."
+            )
+            return False
 
-            # Crear mensaje según el rol
-            role = getattr(message, "role", "user")
-            content = getattr(message, "content", "")
+        # Crear mensaje según el rol
+        role = getattr(message, "role", "user")
+        content = getattr(message, "content", "")
 
-            if role == "user":
-                db_message = message_repository.create_user_message(
-                    db, conversation_id=conversation_uuid, content=content
-                )
-            elif role == "assistant":
-                db_message = message_repository.create_assistant_message(
-                    db, conversation_id=conversation_uuid, content=content
-                )
-            elif role == "system":
-                db_message = message_repository.create_system_message(
-                    db, conversation_id=conversation_uuid, content=content
-                )
-            else:
-                logger.error(f"DBG_SS: Rol de mensaje inválido: {role}")
-                return False
+        if role == "user":
+            db_message = message_repository.create_user_message(
+                db, conversation_id=conversation_uuid, content=content
+            )
+        elif role == "assistant":
+            db_message = message_repository.create_assistant_message(
+                db, conversation_id=conversation_uuid, content=content
+            )
+        elif role == "system":
+            db_message = message_repository.create_system_message(
+                db, conversation_id=conversation_uuid, content=content
+            )
+        else:
+            logger.error(f"DBG_SS: Rol de mensaje inválido: {role}")
+            return False
 
-            if not db_message:
-                logger.error(f"DBG_SS: Error al crear mensaje para {conversation_id}")
-                return False
+        if not db_message:
+            logger.error(f"DBG_SS: Error al crear mensaje para {conversation_id}")
+            return False
 
-            logger.debug(f"DBG_SS: Mensaje '{role}' añadido a {conversation_id}.")
-            return True
+        logger.debug(f"DBG_SS: Mensaje '{role}' añadido a {conversation_id}.")
+        return True
 
-    async def save_conversation(self, conversation: PydanticConversation) -> bool:
+    async def save_conversation(
+        self, conversation: PydanticConversation, db: Session
+    ) -> bool:
         """Guarda/Actualiza la conversación completa en la base de datos."""
         if not isinstance(conversation, PydanticConversation):
             logger.error(
@@ -206,49 +204,46 @@ class StorageService:
             logger.error(f"DBG_SS: ID de conversación inválido: {conversation.id}")
             return False
 
-        with Session(conversation_repository._session.engine) as db:
-            # Verificar que la conversación existe
-            db_conversation = conversation_repository.get(db, conversation_id)
-            if not db_conversation:
-                logger.error(
-                    f"DBG_SS: Conversación {conversation.id} no encontrada para actualizar."
-                )
-                return False
-
-            # Actualizar datos principales
-            update_data = {
-                "selected_sector": conversation.metadata.get("selected_sector"),
-                "selected_subsector": conversation.metadata.get("selected_subsector"),
-                "current_question_id": conversation.metadata.get("current_question_id"),
-                "is_complete": conversation.metadata.get("is_complete", False),
-                "has_proposal": conversation.metadata.get("has_proposal", False),
-                "client_name": conversation.metadata.get("client_name", "Cliente"),
-                "proposal_text": conversation.metadata.get("proposal_text"),
-                "pdf_path": conversation.metadata.get("pdf_path"),
-            }
-
-            # Actualizar conversación
-            updated_conversation = conversation_repository.update(
-                db, db_obj=db_conversation, obj_in=update_data
+        # Verificar que la conversación existe
+        db_conversation = conversation_repository.get(db, conversation_id)
+        if not db_conversation:
+            logger.error(
+                f"DBG_SS: Conversación {conversation.id} no encontrada para actualizar."
             )
-            if not updated_conversation:
-                logger.error(
-                    f"DBG_SS: Error al actualizar conversación {conversation.id}"
+            return False
+
+        # Actualizar datos principales
+        update_data = {
+            "selected_sector": conversation.metadata.get("selected_sector"),
+            "selected_subsector": conversation.metadata.get("selected_subsector"),
+            "current_question_id": conversation.metadata.get("current_question_id"),
+            "is_complete": conversation.metadata.get("is_complete", False),
+            "has_proposal": conversation.metadata.get("has_proposal", False),
+            "client_name": conversation.metadata.get("client_name", "Cliente"),
+            "proposal_text": conversation.metadata.get("proposal_text"),
+            "pdf_path": conversation.metadata.get("pdf_path"),
+        }
+
+        # Actualizar conversación
+        updated_conversation = conversation_repository.update(
+            db, db_obj=db_conversation, obj_in=update_data
+        )
+        if not updated_conversation:
+            logger.error(f"DBG_SS: Error al actualizar conversación {conversation.id}")
+            return False
+
+        # Actualizar metadata
+        for key, value in conversation.metadata.items():
+            # Solo guardar en tabla metadata lo que no está en campos principales
+            if key not in update_data:
+                conversation_repository.update_metadata(
+                    db, conversation_id=conversation_id, key=key, value=value
                 )
-                return False
 
-            # Actualizar metadata
-            for key, value in conversation.metadata.items():
-                # Solo guardar en tabla metadata lo que no está en campos principales
-                if key not in update_data:
-                    conversation_repository.update_metadata(
-                        db, conversation_id=conversation_id, key=key, value=value
-                    )
-
-            logger.info(
-                f"DBG_SS: Conversación {conversation.id} actualizada en base de datos."
-            )
-            return True
+        logger.info(
+            f"DBG_SS: Conversación {conversation.id} actualizada en base de datos."
+        )
+        return True
 
     async def cleanup_old_conversations(self):
         """Elimina conversaciones más antiguas que el timeout."""

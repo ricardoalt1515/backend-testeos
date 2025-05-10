@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 import logging
 import os
 from uuid import UUID  # Importar uuid
+import uuid
 import re
 from datetime import datetime  # Importar datetime
 from typing import Any, Optional, Dict, List  # Añadir Optional y Dict
@@ -137,7 +138,7 @@ async def start_conversation(
 ):
     """Inicia conversación, Recibiendo contexto del usuario si existe."""
     try:
-        # Crear conversación
+        # Pasar la sesión de base de datos al servicio
         conversation = await storage_service.create_conversation(db)
         logger.info(f"Nueva conversacion iniciada (ID: {conversation.id})")
 
@@ -148,7 +149,7 @@ async def start_conversation(
                 # Extraer token
                 token = authorization.replace("Bearer ", "")
 
-                # Verificar token
+                # Verificar token - necesita pasar la sesión también
                 user_data = await auth_service.verify_token(token, db)
 
                 if user_data and "id" in user_data:
@@ -170,9 +171,7 @@ async def start_conversation(
                 )
 
         # Procesar contexto del usuario si existe
-        if (
-            request_data and request_data.customContext
-        ):  # Corregido: request_data en lugar de request_Data
+        if request_data and request_data.customContext:
             context = request_data.customContext
             logger.info(f"Contexto recibido: {context}")
 
@@ -193,8 +192,8 @@ async def start_conversation(
 
             logger.info(f"Metadata actualizada con contexto: {conversation.metadata}")
 
-        # Guardar conversación con la metadata actualizada
-        await storage_service.save_conversation(conversation)
+        # Guardar conversación con la metadata actualizada - PASAR LA SESIÓN
+        await storage_service.save_conversation(conversation, db)
 
         # Devolver respuesta
         return ConversationResponse(
@@ -214,44 +213,17 @@ async def start_conversation(
 async def send_message(
     data: MessageCreate,
     background_tasks: BackgroundTasks,
-    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db),
 ):
     """
-    Procesa mensaje usuario. Si es el último, genera propuesta y PDF automáticamente.
-    Si el usuario pide 'descargar pdf' (y ya está lista), dispara la descarga.
-    Si no, obtiene siguiente pregunta de la IA.
-    Devuelve un diccionario JSON.
+    Procesa mensaje usuario...
     """
     conversation_id = data.conversation_id
     user_input = data.message
 
     try:
-        # Verificar permisos si hay token
-        if authorization and authorization.startswith("Bearer "):
-            token = authorization.replace("Bearer ", "")
-            user_data = await auth_service.verify_token(token)
-
-            # Si hay usuario autenticado y la conversation tiene ususario asignado
-            if user_data:
-                conversation = await storage_service.get_conversation(conversation_id)
-                if (
-                    conversation
-                    and conversation.user_id
-                    and conversation.user_id != user_data["id"]
-                ):
-                    logger.warning(
-                        f"Acceso denengado: Usuario {user_data['id']} intento acceder a conversacion {conversation_id} de otro usuario"
-                    )
-                    return {
-                        "id": "error-unauthorized",
-                        "message": "you do not have permission to access this conversation",
-                        "conversation_id": conversation_id,
-                        "created_at": datetime.utcnow(),
-                    }
-
-        # 1. Cargar Conversación
-        logger.debug(f"Recibida petición /message para conv: {conversation_id}")
-        conversation = await storage_service.get_conversation(conversation_id)
+        # 1. Cargar Conversación - PASAR LA SESIÓN
+        conversation = await storage_service.get_conversation(conversation_id, db)
         if not conversation:
             logger.error(f"Conversación no encontrada: {conversation_id}")
             return {
@@ -260,19 +232,16 @@ async def send_message(
                 "conversation_id": conversation_id,
                 "created_at": datetime.utcnow(),
             }
-        if not isinstance(conversation.metadata, dict):
-            logger.error(f"Metadata inválida para conversación: {conversation_id}")
-            return {
-                "id": "error-metadata",
-                "message": "Error interno [MD01].",
-                "conversation_id": conversation_id,
-                "created_at": datetime.utcnow(),
-            }
 
-        # 2. Crear objeto mensaje usuario (se añade al historial más adelante si aplica)
+        # 2. Crear objeto mensaje usuario
         user_message_obj = Message.user(user_input)
 
-        # --- 3. Lógica para decidir el flujo: Petición PDF explícita o Continuar/Finalizar ---
+        # 3. Añadir mensaje del usuario al historial - PASAR LA SESIÓN
+        await storage_service.add_message_to_conversation(
+            conversation_id, user_message_obj, db
+        )
+
+        # --- 4. Lógica para decidir el flujo: Petición PDF explícita o Continuar/Finalizar ---
         is_pdf_req = _is_pdf_request(user_input)
         proposal_ready = conversation.metadata.get("has_proposal", False)
 
@@ -331,8 +300,8 @@ async def send_message(
                     f"Guardada respuesta para {question_id}: '{user_input.strip()}'"
                 )
 
-                # Guardar la conversación actualizada
-                await storage_service.save_conversation(conversation)
+                # Al final Guardar la conversación - PASAR LA SESION
+                await storage_service.save_conversation(conversation, db)
 
             # Determinar si fue la última respuesta ANTES de llamar a IA
             last_question_id = conversation.metadata.get("current_question_id")
@@ -506,9 +475,10 @@ async def send_message(
 
 # Endpoint /download-pdf (SIN CAMBIOS)
 @router.get("/{conversation_id}/download-pdf")
-async def download_pdf(conversation_id: str):
+async def download_pdf(conversation_id: str, db: Session = Depends(get_db)):
     try:
-        conversation = await storage_service.get_conversation(conversation_id)
+        # Pasar la sesion
+        conversation = await storage_service.get_conversation(conversation_id, db)
         if not conversation:
             raise HTTPException(status_code=404, detail="Conversación no encontrada.")
 
