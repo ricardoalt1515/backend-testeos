@@ -7,6 +7,10 @@ import logging
 from app.routes import chat, documents, feedback, auth
 from app.config import settings
 
+# Importar middlewares (asegúrate de que los archivos existen)
+from app.middleware.auth_middleware import AuthMiddleware
+from app.middleware.rate_limit_middleware import RateLimitMiddleware
+
 # Configuración de logging
 logging.basicConfig(
     level=logging.INFO,
@@ -28,7 +32,16 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["Content-Disposition"],  # Importante para las descargas
+    expose_headers=["Content-Disposition"],
+    allow_origin_regex=r"https://.*\.hostingersite\.com$|https://ricardoalt1515\.github\.io$|http://localhost:.*$",
+)
+
+# Middleware de autenticación
+app.add_middleware(AuthMiddleware)
+
+# Rate limiting
+app.add_middleware(
+    RateLimitMiddleware, requests_per_minute=60, burst_size=10, per_user=True
 )
 
 # Incluir rutas

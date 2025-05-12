@@ -1,5 +1,5 @@
 # app/routes/chat.py
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Header, Depends
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends, Header, Request
 from fastapi.responses import FileResponse
 import logging
 import os
@@ -25,11 +25,29 @@ from app.services.auth_service import auth_service
 from app.config import settings
 from app.db.base import get_db
 
+# Importar repositorios
+from app.repositories.conversation_repository import conversation_repository
+
 router = APIRouter()
 logger = logging.getLogger("hydrous")
 
-
 # --- Funciones Auxiliares ---
+
+
+# FUNCIÓN HELPER para obtener usuario actual
+def get_current_user(request: Request):
+    """
+    Extrae los datos del usuario autenticado del middleware.
+
+    El middleware ya verificó el token y almacenó los datos en request.state.user
+    """
+    if not hasattr(request.state, "user") or not request.state.user:
+        raise HTTPException(
+            status_code=401, detail="No se encontraron datos de usuario autenticado"
+        )
+    return request.state.user
+
+
 def _get_full_questionnaire_path(metadata: Dict[str, Any]) -> List[str]:
     """Intenta construir la ruta completa del cuestionario."""
     path = [
@@ -118,80 +136,73 @@ class ConversationStartRequest(BaseModel):
 
 @router.post("/start", response_model=ConversationResponse)
 async def start_conversation(
+    request: Request,  # Para acceder a datos del usuario
     request_data: Optional[ConversationStartRequest] = None,
-    authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db),
 ):
-    """Inicia conversación, Recibiendo contexto del usuario si existe."""
+    """Inicia conversación. Ahora requiere autenticación obligatoria."""
     try:
-        # Pasar la sesión de base de datos al servicio
+        # Obtener usuario autenticado del middleware
+        current_user = get_current_user(request)
+
+        # Crear conversación
         conversation = await storage_service.create_conversation(db)
-        logger.info(f"Nueva conversacion iniciada (ID: {conversation.id})")
+        logger.info(
+            f"Nueva conversacion iniciada (ID: {conversation.id}) por usuario: {current_user['id']}"
+        )
 
-        # Asociar con usuario si hay token de autorización
-        user_id = None
-        if authorization and authorization.startswith("Bearer "):
-            try:
-                # Extraer token
-                token = authorization.replace("Bearer ", "")
+        # AUTOMÁTICAMENTE asociar con usuario autenticado
+        # Obtener de base de datos usando el ID de la conversación recién creada
+        db_conversation = conversation_repository.get(db, UUID(conversation.id))
+        if db_conversation:
+            # Siempre asociamos con el usuario autenticado
+            db_conversation.user_id = UUID(current_user["id"])
+            db.commit()
+            logger.info(
+                f"Conversación {conversation.id} asociada al usuario {current_user['id']}"
+            )
 
-                # Verificar token - pasando la sesión
-                user_data = await auth_service.verify_token(token, db)
+            # Guardar ID en metadata para verificación también
+            conversation.metadata["user_id"] = current_user["id"]
 
-                if user_data and "id" in user_data:
-                    # Actualizar la conversación con el ID del usuario
-                    user_id = user_data["id"]
-                    from app.repositories.conversation_repository import (
-                        conversation_repository,
-                    )
-
-                    db_conversation = conversation_repository.get(
-                        db, UUID(conversation.id)
-                    )
-                    if db_conversation:
-                        db_conversation.user_id = UUID(user_id)
-                        db.commit()
-                        logger.info(
-                            f"Conversación {conversation.id} asociada al usuario {user_id}"
-                        )
-            except Exception as auth_err:
-                # Continuar sin asociar a un usuario en caso de error
-                logger.warning(
-                    f"No se pudo asociar la conversación a un usuario: {auth_err}"
-                )
-
-        # Procesar contexto del usuario si existe
+        # Aplicar contexto personalizado si existe
         if request_data and request_data.customContext:
             context = request_data.customContext
-            logger.info(f"Contexto recibido: {context}")
 
-            # Actualizar metadata con datos del usuario
+            # Añadir datos del usuario al contexto
+            conversation.metadata["user_email"] = current_user.get("email")
+            conversation.metadata["user_name"] = (
+                f"{current_user.get('first_name', '')} {current_user.get('last_name', '')}"
+            )
+
+            # Aplicar contexto del cliente
             if "client_name" in context:
                 conversation.metadata["client_name"] = context["client_name"]
-
             if "selected_sector" in context:
                 conversation.metadata["selected_sector"] = context["selected_sector"]
-
             if "selected_subsector" in context:
                 conversation.metadata["selected_subsector"] = context[
                     "selected_subsector"
                 ]
-
             if "user_location" in context:
                 conversation.metadata["user_location"] = context["user_location"]
 
-            logger.info(f"Metadata actualizada con contexto: {conversation.metadata}")
+            logger.info(
+                f"Contexto actualizado para conversación: {conversation.metadata}"
+            )
 
-        # Guardar conversación con la metadata actualizada
+        # Guardar cambios
         await storage_service.save_conversation(conversation, db)
 
-        # Devolver respuesta
         return ConversationResponse(
             id=conversation.id,
             created_at=conversation.created_at,
             messages=[],
             metadata=conversation.metadata,
         )
+
+    except HTTPException as he:
+        raise he
     except Exception as e:
         logger.error(f"Error crítico al iniciar conversación: {str(e)}", exc_info=True)
         raise HTTPException(
@@ -201,21 +212,23 @@ async def start_conversation(
 
 @router.post("/message")
 async def send_message(
+    request: Request,  # Para acceder a datos del usuario
     data: MessageCreate,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
-    """
-    Procesa mensaje usuario. Si es el último, genera propuesta y PDF automáticamente.
-    Si el usuario pide 'descargar pdf' (y ya está lista), dispara la descarga.
-    Si no, obtiene siguiente pregunta de la IA.
-    Devuelve un diccionario JSON.
-    """
-    conversation_id = data.conversation_id
-    user_input = data.message
+    """Procesa mensaje del usuario autenticado."""
+    # Definir conversation_id al inicio para que esté disponible en el manejador de excepciones
+    conversation_id = (
+        data.conversation_id if hasattr(data, "conversation_id") else "unknown"
+    )
+    user_input = data.message if hasattr(data, "message") else ""
     assistant_response_data = None
 
     try:
+        # Obtener usuario autenticado
+        current_user = get_current_user(request)
+
         # 1. Cargar Conversación
         logger.debug(f"Recibida petición /message para conv: {conversation_id}")
         conversation = await storage_service.get_conversation(conversation_id, db)
@@ -239,6 +252,18 @@ async def send_message(
         # 2. Crear objeto mensaje usuario
         user_message_obj = Message.user(user_input)
 
+        # VERIFICAR PROPIEDAD: Solo el dueño puede enviar mensajes
+        # Obtener directamente de la base de datos para verificar el user_id
+        db_conversation = conversation_repository.get(db, UUID(conversation_id))
+        if not db_conversation or str(db_conversation.user_id) != current_user["id"]:
+            logger.warning(
+                f"Usuario {current_user['id']} intentó acceder a conversación {conversation_id} no autorizada"
+            )
+            raise HTTPException(
+                status_code=403,
+                detail="No tienes permisos para acceder a esta conversación",
+            )
+
         # 3. Lógica para decidir el flujo
         is_pdf_req = _is_pdf_request(user_input)
         proposal_ready = conversation.metadata.get("has_proposal", False)
@@ -248,41 +273,47 @@ async def send_message(
         )
 
         if is_pdf_req and proposal_ready:
-            # Flujo de Descarga PDF Explícita
+            # --- Flujo de Descarga PDF Explícita ---
             logger.info(
                 f"DBG_PDF_CHECK: Entrando en flujo de descarga PDF explícita para {conversation_id}."
             )
+            # NO añadir mensaje "descargar pdf" al historial
+            # NO llamar a AI Service
             download_url = f"{settings.BACKEND_URL}{settings.API_V1_STR}/chat/{conversation.id}/download-pdf"
-            assistant_response_data = {
+            assistant_response_data = {  # Usamos la variable común
                 "id": "pdf-trigger-" + str(uuid.uuid4())[:8],
-                "message": None,
+                "message": None,  # No hay mensaje de chat
                 "conversation_id": conversation_id,
                 "created_at": datetime.utcnow(),
-                "action": "trigger_download",
+                "action": "trigger_download",  # Flag para frontend
                 "download_url": download_url,
             }
             logger.info(
                 f"DBG_PDF_CHECK: Preparada respuesta trigger_download para {conversation_id}."
             )
+            # No es necesario guardar la conversación aquí, no cambió nada crítico
 
         else:
-            # Flujo Normal: Añadir mensaje usuario y Continuar/Finalizar Cuestionario
+            # --- Flujo Normal: Añadir mensaje usuario y Continuar/Finalizar Cuestionario ---
             logger.info(
                 f"DBG_PDF_CHECK: Entrando en flujo normal/final para {conversation_id}."
             )
 
-            # Añadir mensaje del usuario al historial
+            # Añadir mensaje del usuario al historial en memoria AHORA
             await storage_service.add_message_to_conversation(
                 conversation_id, user_message_obj, db
             )
 
-            # Guardar resumen de la respuesta del usuario
+            # Guardar un resumen de la respuesta del usuario
             if conversation.metadata.get("current_question_id"):
                 question_id = conversation.metadata.get("current_question_id")
+                summary = {}
 
+                # Si ya existe un resumen, usarlo
                 if conversation.metadata.get("response_summaries") is None:
                     conversation.metadata["response_summaries"] = {}
 
+                # Guardar esta respuesta en el resumen
                 conversation.metadata["response_summaries"][question_id] = {
                     "question": conversation.metadata.get(
                         "current_question_asked_summary", ""
@@ -362,12 +393,12 @@ async def send_message(
                     }
 
             else:
-                # Aún hay preguntas: Llamar a IA
+                # --- Aún hay preguntas: Llamar a IA ---
                 logger.info(
                     f"DBG_PDF_CHECK: No es la última pregunta ni petición PDF válida. Llamando a AI Service."
                 )
 
-                # Asegurarse de guardar el estado ANTES de llamar a la IA
+                # Asegurarse de guardar el estado ANTES de llamar a la IA por si actualizamos sector/subsector
                 try:
                     last_q_summary = conversation.metadata.get(
                         "current_question_asked_summary", ""
@@ -375,13 +406,20 @@ async def send_message(
                     logger.debug(
                         f"Actualizando sector/subsector basado en user_input='{user_input}' y last_q_summary='{last_q_summary}'"
                     )
-                    # Lógica para actualizar metadata["selected_sector"] y subsector si es necesario
+                    if "sector principal opera" in last_q_summary:
+                        # ... (lógica para actualizar metadata["selected_sector"]) ...
+                        pass
+                    elif "giro específico" in last_q_summary:
+                        # ... (lógica para actualizar metadata["selected_subsector"]) ...
+                        pass
+                    # Guardar conversación con metadata actualizada ANTES de llamar a IA
                     await storage_service.save_conversation(conversation, db)
                 except Exception as e:
                     logger.error(
                         f"Error actualizando metadata antes de llamar a IA: {e}",
                         exc_info=True,
                     )
+                    # Continuar de todas formas? O devolver error? Optamos por continuar.
 
                 ai_response_content = await ai_service.handle_conversation(conversation)
                 assistant_message = Message.assistant(ai_response_content)
@@ -397,8 +435,9 @@ async def send_message(
                     "created_at": assistant_message.created_at,
                 }
 
-        # Guardar y Devolver
+        # --- Guardar y Devolver ---
         if not assistant_response_data:
+            # Fallback si algo salió MUY mal
             logger.error(
                 f"Fallo crítico: No se preparó assistant_response_data para {conversation_id}"
             )
@@ -409,53 +448,81 @@ async def send_message(
                 "created_at": datetime.utcnow(),
             }
 
-        # Guardar estado final de la conversación
+        # Guardar estado final de la conversación (incluye mensajes añadidos y metadata)
         await storage_service.save_conversation(conversation, db)
-        background_tasks.add_task(storage_service.cleanup_old_conversations)
+        background_tasks.add_task(storage_service.cleanup_old_conversations)  # Limpieza
 
         logger.info(
             f"Devolviendo respuesta para {conversation_id}: action={assistant_response_data.get('action', 'N/A')}, msg_len={len(assistant_response_data.get('message', '') or '')}"
         )
         return assistant_response_data
 
+    # --- Manejo de Excepciones ---
     except HTTPException as http_exc:
+        # Re-lanzar excepciones HTTP conocidas
         raise http_exc
     except Exception as e:
+        # Capturar cualquier otra excepción inesperada
         logger.error(
-            f"Error fatal no controlado en send_message (PDF Automático) para {conversation_id}: {str(e)}",
+            f"Error fatal no controlado en send_message para {conversation_id}: {str(e)}",
             exc_info=True,
         )
+        # Preparar una respuesta de error genérica para el frontend
         error_response = {
             "id": "error-fatal-" + str(uuid.uuid4())[:8],
             "message": "Lo siento, ha ocurrido un error inesperado en el servidor.",
-            "conversation_id": (
-                conversation_id if "conversation_id" in locals() else "unknown"
-            ),
+            "conversation_id": conversation_id,
             "created_at": datetime.utcnow(),
         }
         # Intentar guardar el error en la metadata de la conversación si es posible
         try:
+            # Verificar si 'conversation' existe y es válida antes de accederla
             if (
                 "conversation" in locals()
                 and isinstance(conversation, Conversation)
                 and isinstance(conversation.metadata, dict)
             ):
-                conversation.metadata["last_error"] = f"Fatal: {str(e)[:200]}"
+                conversation.metadata["last_error"] = (
+                    f"Fatal: {str(e)[:200]}"  # Limitar longitud
+                )
                 await storage_service.save_conversation(conversation, db)
         except Exception as save_err:
+            # Loguear si falla el guardado del error, pero no detener el flujo
             logger.error(
                 f"Error adicional al intentar guardar error fatal en metadata: {save_err}"
             )
 
+        # Devolver la respuesta de error al frontend
         return error_response
 
 
+# Endpoint /download-pdf (SIN CAMBIOS)
 @router.get("/{conversation_id}/download-pdf")
-async def download_pdf(conversation_id: str, db: Session = Depends(get_db)):
+async def download_pdf(
+    request: Request,  # Para acceder a datos del usuario
+    conversation_id: str,
+    db: Session = Depends(get_db),
+):
+    """Descarga PDF. Solo el dueño de la conversación puede descargar."""
     try:
+        # Obtener usuario autenticado
+        current_user = get_current_user(request)
+
+        # Cargar conversación
         conversation = await storage_service.get_conversation(conversation_id, db)
         if not conversation:
-            raise HTTPException(status_code=404, detail="Conversación no encontrada.")
+            raise HTTPException(status_code=404, detail="Conversación no encontrada")
+
+        # VERIFICAR PROPIEDAD
+        db_conversation = conversation_repository.get(db, UUID(conversation_id))
+        if not db_conversation or str(db_conversation.user_id) != current_user["id"]:
+            logger.warning(
+                f"Usuario {current_user['id']} intentó descargar conversación {conversation_id} no autorizada"
+            )
+            raise HTTPException(
+                status_code=403,
+                detail="No tienes permisos para descargar esta propuesta",
+            )
 
         pdf_path = conversation.metadata.get("pdf_path")
 

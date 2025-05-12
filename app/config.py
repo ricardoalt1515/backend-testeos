@@ -26,18 +26,6 @@ class Settings(BaseSettings):
         "*" if os.getenv("DEBUG", "False").lower() in ("true", "1", "t") else "",
     ]
 
-    # Configuracion de PostgreSQL
-    POSTGRES_USER: str = os.getenv("POSTGRES_USER", "hydrous")
-    POSTGRES_PASSWORD: str = os.getenv("POSTGRES_PASSWORD", "hydrous_password")
-    POSTGRES_SERVER: str = os.getenv("POSTGRES_SERVER", "localhost")
-    POSTGRES_PORT: str = os.getenv("POSTGRES_PORT", "5432")
-    POSTGRES_DB: str = os.getenv("POSTGRES_DB", "hydrous_db")
-
-    # URL de conexion SQLAlchemy
-    DATABASE_URL: str = (
-        f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_SERVER}:{POSTGRES_PORT}/{POSTGRES_DB}"
-    )
-
     # Configuración IA - Añadimos compatibilidad con los nombres antiguos y nuevos
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
     GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
@@ -64,6 +52,26 @@ class Settings(BaseSettings):
     # Almacenamiento
     CONVERSATION_TIMEOUT: int = 60 * 60 * 24  # 24 horas
     UPLOAD_DIR: str = os.getenv("UPLOAD_DIR", "uploads")
+
+    # PostgreSQL
+    POSTGRES_USER: str = os.getenv("POSTGRES_USER", "hydrous")
+    POSTGRES_PASSWORD: str = os.getenv("POSTGRES_PASSWORD", "hydrous_password")
+    POSTGRES_SERVER: str = os.getenv("POSTGRES_SERVER", "localhost")
+    POSTGRES_PORT: str = os.getenv("POSTGRES_PORT", "5432")
+    POSTGRES_DB: str = os.getenv("POSTGRES_DB", "hydrous_db")
+
+    # URL de conexión SQLAlchemy
+    DATABASE_URL: str = (
+        f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_SERVER}:{POSTGRES_PORT}/{POSTGRES_DB}"
+    )
+
+    # Redis
+    REDIS_URL: str = os.getenv("REDIS_URL", "redis://:redis_password@localhost:6379/0")
+
+    # Seguridad
+    JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "temporalsecretkey123456789")
+    JWT_ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24 horas
 
 
 # Crear instancia de configuración

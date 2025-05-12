@@ -27,4 +27,5 @@ dependencies = [
     "alembic>=1.15.2",
     "psycopg2-binary>=2.9.10",
     "bcrypt>=4.3.0",
+    "redis>=6.0.0",
 ]

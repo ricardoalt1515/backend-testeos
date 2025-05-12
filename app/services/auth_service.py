@@ -10,6 +10,7 @@ from fastapi import Depends
 
 from app.models.user import UserCreate, UserInDB, User, TokenData
 from app.repositories.user_repository import user_repository
+from app.services.blacklist_service import blacklist_service
 from app.db.base import get_db
 from app.config import settings
 
@@ -113,14 +114,22 @@ class AuthService:
             return None
 
     def create_access_token(self, user_id: str) -> TokenData:
-        """Crea un token JWT para el usuario"""
+        """Crea un token JWT para el usuario con jti para tracking"""
         try:
             # Configurar expiración
             expires_delta = timedelta(minutes=self.ACCESS_TOKEN_EXPIRE_MINUTES)
             expires_at = datetime.utcnow() + expires_delta
 
+            # Añadir jti (JWT ID) para poder rastrear el token
+            jti = str(uuid.uuid4())
+
             # Datos a codificar en el token
-            to_encode = {"sub": user_id, "exp": expires_at}
+            to_encode = {
+                "sub": user_id,
+                "exp": expires_at,
+                "iat": datetime.utcnow(),
+                "jti": jti,
+            }
 
             # Crear token
             encoded_jwt = jwt.encode(
@@ -141,6 +150,11 @@ class AuthService:
     async def verify_token(self, token: str, db: Session) -> Optional[Dict[str, Any]]:
         """Verifica y decodifica un token JWT"""
         try:
+            # Verificar si el token esta en la blacklist
+            if await blacklist_service.is_blacklisted(token):
+                logger.warning("Token intentado pero esta en blacklist")
+                return None
+
             # Decodificar token
             payload = jwt.decode(token, self.SECRET_KEY, algorithms=[self.ALGORITHM])
             user_id = payload.get("sub")
@@ -179,6 +193,60 @@ class AuthService:
             return None
         except Exception as e:
             logger.error(f"Error verificando token: {str(e)}")
+            return None
+
+    async def logout(self, token: str, user_id: str) -> bool:
+        """
+        Realiza logout invalidando el token actual.
+
+        Args:
+            token: JWT token a invalidar
+            user_id: ID del usuario
+        Returns:
+            bool: True si logout exitoso
+        """
+        try:
+            # Añadir token a blacklist
+            await blacklist_service.add_to_blacklist(token)
+
+            logger.info(f"Logout exitoso para usuario {user_id}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error en logout: {e}")
+            return False
+
+    async def logout_all_devices(self, user_id: str, current_token: str) -> bool:
+        """
+        Cierra sesión en todos los dispositivos del usuario.
+        
+        Args:
+            user_id: ID del usuario
+            current_token: Token actual (se excluye de la invalidación)
+            
+        Returns:
+            bool: True si logout exitoso
+        """
+        try:
+            # Invalidar todas las sesiones del usuario
+            invalidated = await blacklist_service.invalidate_user_sessions(
+                user_id, 
+                exclude_session=self._get_token_jti(current_token)
+            )
+            
+            logger.info(f"Logout masivo: {invalidated} sesiones invalidadas para usuario {user_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error en logout masivo: {e}")
+            return False
+    
+    def _get_token_jti(self, token: str) -> Optional[str]:
+        """Extrae el jti de un token sin verificar la firma"""
+        try:
+            decoded = jwt.decode(token, options={"verify_signature": False})
+            return decoded.get("jti")
+        except:
             return None
 
     def get_user_by_id(self, user_id: str, db: Session) -> Optional[User]:
