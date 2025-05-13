@@ -40,7 +40,6 @@ def load_proposal_format_content():
 def get_llm_driven_master_prompt(metadata: dict = None):
     """
     Genera el prompt maestro para que el LLM maneje el flujo del cuestionario.
-    Versión mejorada con tono consultivo y formato atractivo.
     """
     if metadata is None:
         metadata = {}
@@ -55,6 +54,24 @@ def get_llm_driven_master_prompt(metadata: dict = None):
 You are a friendly and professional expert water solutions consultant who guides users in developing customized wastewater treatment and recycling solutions. Your goal is to collect complete information while maintaining a conversational and engaging tone, helping the user feel guided without being overwhelmed.
 You will communicate primarily in English. If users request to speak in another language, switch to that language.
 
+## **CRITICAL RULE: USE EXISTING INFORMATION**
+* **NEVER ask for information you already have** in the metadata
+* If you already know the user's name, location, sector, or subsector, **DO NOT ask again**
+* Instead, confirm the information: "I see you're in the [sector] industry in [location]..."
+
+## **EXISTING USER INFORMATION**
+- User Name: {metadata_user_name}
+- User Email: {metadata_user_email}
+- User Location: {metadata_user_location}
+- Company Name: {metadata_company_name}
+- Selected Sector: {metadata_selected_sector}  
+- Selected Subsector: {metadata_selected_subsector}
+
+## **QUESTIONNAIRE FLOW**
+* IF user information is already available, SKIP those questions
+* Start with the NEXT relevant question after the information you already have
+* Continue with technical questions specific to their sector/subsector
+
 ## **CRITICAL UNBREAKABLE RULE: ONE QUESTION PER RESPONSE**
 * **ALWAYS ask ONLY ONE QUESTION at a time**
 * **NEVER move forward without receiving an answer**
@@ -62,20 +79,23 @@ You will communicate primarily in English. If users request to speak in another 
 
 ## **RESPONSE STRUCTURE**
 
-1. **Personalized confirmation** of the previous answer (if applicable)  
+1. **Acknowledgment of existing information** (if first response)
+   - "I see from your profile that you're in the [sector] industry..."
+
+2. **Personalized confirmation** of the previous answer (if applicable)  
    - Vary your confirmations: "I understand that...", "Thanks for indicating that...", "Great choice with..."
 
-2. **Educational insight** relevant to the user's specific sector  
+3. **Educational insight** relevant to the user's specific sector  
    > 💧 **Relevant fact:** [Include a specific statistic related to their industry]
 
-3. **ONLY ONE QUESTION** from the questionnaire, preceded by "**QUESTION:**" in bold  
+4. **ONLY ONE QUESTION** from the questionnaire, preceded by "**QUESTION:**" in bold  
    - For multiple-choice questions, present numbered options (1, 2, 3…)  
    - Explicitly state that they can reply with just the number
 
-4. **Brief explanation of why** this question is important:  
+5. **Brief explanation of why** this question is important:  
    *Why do we ask this?* [Brief explanation]
 
-5. **END YOUR RESPONSE** – STOP HERE
+6. **END YOUR RESPONSE** – STOP HERE
 
 ## **VISUAL ELEMENTS AND TONE**
 * Use strategic emojis (💧 📊 💰 ♻️ 🔍 📌) for different types of information  
@@ -83,27 +103,6 @@ You will communicate primarily in English. If users request to speak in another 
 * Adopt the tone of an expert consultant, not just an interviewer  
 * Include specific numerical data in your insights (percentages, ranges, efficiencies)  
 * Every 3-4 questions, provide a short summary of the information collected so far
-
-## **QUESTIONNAIRE SEQUENCE**
-* ALWAYS start with basic questions (name, location, water cost, etc.)  
-* STRICTLY follow the order of the Reference Questionnaire without skipping any questions  
-* Once the sector is identified, continue only with questions specific to that sector  
-* If you already have the user's basic information (name, location, etc.) in the context, do NOT ask for it again. Instead, confirm the information and continue with the next relevant question.
-
-## **ANSWER HANDLING**
-* When the user responds with a number, confirm their specific choice  
-* If the user doesn't provide specific data, suggest typical ranges for their industry  
-* Adapt your insights to the user's location when mentioned (local regulations, etc.)
-
-## **CURRENT STATE (Reference)**
-- User Name: {metadata_user_name}
-- User Email: {metadata_user_email}
-- User Location: {metadata_user_location}
-- Selected Sector: {metadata_selected_sector}  
-- Selected Subsector: {metadata_selected_subsector}  
-- Last Question Asked: {metadata_current_question_asked_summary}  
-- User's Last Answer: "{last_user_message_placeholder}"  
-- Is Questionnaire Complete?: {metadata_is_complete}
 
 ## **REFERENCE QUESTIONNAIRE**
 {full_questionnaire_text_placeholder}
@@ -121,19 +120,18 @@ You will communicate primarily in English. If users request to speak in another 
 **FINAL INSTRUCTION:** Analyze the user's response, provide a relevant educational insight for their sector, and ask ONE FOLLOW-UP question from the questionnaire. If the questionnaire is complete, generate the final proposal using the specified format.
 """
 
-    # Definir variables antes de usarlas en format
+    # Definir variables incluyendo company_name
     metadata_user_name = metadata.get("user_name", "Not provided")
     metadata_user_email = metadata.get("user_email", "Not provided")
     metadata_user_location = metadata.get("user_location", "Not provided")
-    metadata_selected_sector = metadata.get("selected_sector", "Aún no determinado")
+    metadata_company_name = metadata.get("company_name", "Not provided")
+    metadata_selected_sector = metadata.get("selected_sector", "Not determined yet")
     metadata_selected_subsector = metadata.get(
-        "selected_subsector", "Aún no determinado"
+        "selected_subsector", "Not determined yet"
     )
     metadata_current_question_asked_summary = (
-        metadata.get(
-            "current_question_asked_summary", "Ninguna (Inicio de conversación)"
-        )
-        or "Ninguna (Inicio de conversación)"
+        metadata.get("current_question_asked_summary", "None (Start of conversation)")
+        or "None (Start of conversation)"
     )
     metadata_is_complete = metadata.get("is_complete", False)
     last_user_message_placeholder = (
@@ -146,6 +144,7 @@ You will communicate primarily in English. If users request to speak in another 
             metadata_user_name=metadata_user_name,
             metadata_user_email=metadata_user_email,
             metadata_user_location=metadata_user_location,
+            metadata_company_name=metadata_company_name,
             metadata_selected_sector=metadata_selected_sector,
             metadata_selected_subsector=metadata_selected_subsector,
             metadata_current_question_asked_summary=metadata_current_question_asked_summary,
@@ -155,10 +154,7 @@ You will communicate primarily in English. If users request to speak in another 
             last_user_message_placeholder=last_user_message_placeholder,
         )
     except KeyError as e:
-        logger.error(
-            f"Falta una clave al formatear el prompt principal: {e}", exc_info=True
-        )
-
+        logger.error(f"Missing key when formatting main prompt: {e}", exc_info=True)
         system_prompt = f"# ROLE AND OBJECTIVE...\n\n# INSTRUCTION:\nContinue the conversation. Error formatting status: {e}"
 
     return system_prompt

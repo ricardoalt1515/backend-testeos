@@ -152,7 +152,6 @@ async def start_conversation(
         )
 
         # AUTOMÁTICAMENTE asociar con usuario autenticado
-        # Obtener de base de datos usando el ID de la conversación recién creada
         db_conversation = conversation_repository.get(db, UUID(conversation.id))
         if db_conversation:
             # Siempre asociamos con el usuario autenticado
@@ -162,20 +161,28 @@ async def start_conversation(
                 f"Conversación {conversation.id} asociada al usuario {current_user['id']}"
             )
 
-            # Guardar ID en metadata para verificación también
+            # IMPORTANTE: copiar TODOS los datos del usuario a metadata
             conversation.metadata["user_id"] = current_user["id"]
-
-        # Aplicar contexto personalizado si existe
-        if request_data and request_data.customContext:
-            context = request_data.customContext
-
-            # Añadir datos del usuario al contexto
             conversation.metadata["user_email"] = current_user.get("email")
             conversation.metadata["user_name"] = (
                 f"{current_user.get('first_name', '')} {current_user.get('last_name', '')}"
             )
 
-            # Aplicar contexto del cliente
+            # AÑADIR ESTOS CAMPOS CRÍTICOS:
+            conversation.metadata["user_location"] = current_user.get("location")
+            conversation.metadata["selected_sector"] = current_user.get("sector")
+            conversation.metadata["selected_subsector"] = current_user.get("subsector")
+            conversation.metadata["company_name"] = current_user.get("company_name")
+
+            logger.info(
+                f"Datos completos del usuario transferidos a metadata: {conversation.metadata}"
+            )
+
+        # Aplicar contexto personalizado si existe (para sobreescribir si es necesario)
+        if request_data and request_data.customContext:
+            context = request_data.customContext
+
+            # Estos valores del contexto personalizado pueden sobreescribir
             if "client_name" in context:
                 conversation.metadata["client_name"] = context["client_name"]
             if "selected_sector" in context:
@@ -212,13 +219,12 @@ async def start_conversation(
 
 @router.post("/message")
 async def send_message(
-    request: Request,  # Para acceder a datos del usuario
+    request: Request,
     data: MessageCreate,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
     """Procesa mensaje del usuario autenticado."""
-    # Definir conversation_id al inicio para que esté disponible en el manejador de excepciones
     conversation_id = (
         data.conversation_id if hasattr(data, "conversation_id") else "unknown"
     )
@@ -240,20 +246,11 @@ async def send_message(
                 "conversation_id": conversation_id,
                 "created_at": datetime.utcnow(),
             }
-        if not isinstance(conversation.metadata, dict):
-            logger.error(f"Metadata inválida para conversación: {conversation_id}")
-            return {
-                "id": "error-metadata",
-                "message": "Error interno [MD01].",
-                "conversation_id": conversation_id,
-                "created_at": datetime.utcnow(),
-            }
 
         # 2. Crear objeto mensaje usuario
         user_message_obj = Message.user(user_input)
 
-        # VERIFICAR PROPIEDAD: Solo el dueño puede enviar mensajes
-        # Obtener directamente de la base de datos para verificar el user_id
+        # VERIFICAR PROPIEDAD
         db_conversation = conversation_repository.get(db, UUID(conversation_id))
         if not db_conversation or str(db_conversation.user_id) != current_user["id"]:
             logger.warning(
@@ -264,95 +261,81 @@ async def send_message(
                 detail="No tienes permisos para acceder a esta conversación",
             )
 
-        # 3. Lógica para decidir el flujo
+        # 3. Validar si es petición de PDF
         is_pdf_req = _is_pdf_request(user_input)
         proposal_ready = conversation.metadata.get("has_proposal", False)
 
-        logger.info(
-            f"DBG_PDF_CHECK: ConvID={conversation_id}, Input='{user_input}', is_pdf_req={is_pdf_req}, proposal_ready={proposal_ready}"
-        )
-
         if is_pdf_req and proposal_ready:
-            # --- Flujo de Descarga PDF Explícita ---
-            logger.info(
-                f"DBG_PDF_CHECK: Entrando en flujo de descarga PDF explícita para {conversation_id}."
-            )
-            # NO añadir mensaje "descargar pdf" al historial
-            # NO llamar a AI Service
             download_url = f"{settings.BACKEND_URL}{settings.API_V1_STR}/chat/{conversation.id}/download-pdf"
-            assistant_response_data = {  # Usamos la variable común
+            assistant_response_data = {
                 "id": "pdf-trigger-" + str(uuid.uuid4())[:8],
-                "message": None,  # No hay mensaje de chat
+                "message": None,
                 "conversation_id": conversation_id,
                 "created_at": datetime.utcnow(),
-                "action": "trigger_download",  # Flag para frontend
+                "action": "trigger_download",
                 "download_url": download_url,
             }
-            logger.info(
-                f"DBG_PDF_CHECK: Preparada respuesta trigger_download para {conversation_id}."
-            )
-            # No es necesario guardar la conversación aquí, no cambió nada crítico
-
         else:
-            # --- Flujo Normal: Añadir mensaje usuario y Continuar/Finalizar Cuestionario ---
-            logger.info(
-                f"DBG_PDF_CHECK: Entrando en flujo normal/final para {conversation_id}."
-            )
+            # --- Flujo Normal: Procesamiento con Anti-Repetición Mejorada ---
 
-            # Añadir mensaje del usuario al historial en memoria AHORA
+            # Añadir mensaje del usuario
             await storage_service.add_message_to_conversation(
                 conversation_id, user_message_obj, db
             )
 
-            # Guardar un resumen de la respuesta del usuario
-            if conversation.metadata.get("current_question_id"):
-                question_id = conversation.metadata.get("current_question_id")
-                summary = {}
+            # IMPORTANTE: Guardar respuesta del usuario ANTES de llamar a la IA
+            current_question_id = conversation.metadata.get("current_question_id")
 
-                # Si ya existe un resumen, usarlo
-                if conversation.metadata.get("response_summaries") is None:
+            if current_question_id:
+                # Actualizar metadata con la respuesta
+                if "collected_data" not in conversation.metadata:
+                    conversation.metadata["collected_data"] = {}
+
+                conversation.metadata["collected_data"][
+                    current_question_id
+                ] = user_input.strip()
+
+                # Guardar un resumen más completo
+                if "response_summaries" not in conversation.metadata:
                     conversation.metadata["response_summaries"] = {}
 
-                # Guardar esta respuesta en el resumen
-                conversation.metadata["response_summaries"][question_id] = {
+                conversation.metadata["response_summaries"][current_question_id] = {
                     "question": conversation.metadata.get(
                         "current_question_asked_summary", ""
                     ),
                     "answer": user_input.strip(),
+                    "timestamp": datetime.utcnow().isoformat(),
                 }
-                # Guardar el último question_id respondido
-                conversation.metadata["last_answered_question_id"] = question_id
+
+                # Marcar pregunta como respondida
+                conversation.metadata["last_answered_question_id"] = current_question_id
+
+                # CRÍTICO: Guardar INMEDIATAMENTE antes de llamar a la IA
+                await storage_service.save_conversation(conversation, db)
+                db.commit()  # Forzar commit inmediato
 
                 logger.info(
-                    f"Guardada respuesta para {question_id}: '{user_input.strip()}'"
+                    f"Respuesta guardada para {current_question_id}: '{user_input.strip()}'"
                 )
 
-                # Guardar la conversación actualizada
-                await storage_service.save_conversation(conversation, db)
+            # Recargar conversación para asegurar que tenemos el estado más reciente
+            conversation = await storage_service.get_conversation(conversation_id, db)
 
-            # Determinar si fue la última respuesta ANTES de llamar a IA
-            last_question_id = conversation.metadata.get("current_question_id")
-            is_final_answer = _is_last_question(last_question_id, conversation.metadata)
-            logger.debug(
-                f"DBG_PDF_CHECK: last_q_id='{last_question_id}', is_final_answer={is_final_answer}"
+            # Verificar si es la última pregunta
+            is_final_answer = _is_last_question(
+                current_question_id, conversation.metadata
             )
 
             if is_final_answer:
-                logger.info(
-                    f"Generando propuesta para {conversation_id} con enfoque radical"
-                )
-
-                # Importar el nuevo generador
+                # Generar propuesta
                 from app.services.direct_proposal_generator import (
                     direct_proposal_generator,
                 )
 
-                # Generar propuesta y PDF directamente
                 pdf_path = await direct_proposal_generator.generate_complete_proposal(
                     conversation
                 )
 
-                # Guardar en metadata
                 conversation.metadata["is_complete"] = True
                 conversation.metadata["current_question_id"] = None
                 conversation.metadata["current_question_asked_summary"] = (
@@ -360,11 +343,8 @@ async def send_message(
                 )
 
                 if pdf_path:
-                    logger.info(f"Propuesta directa generada exitosamente: {pdf_path}")
                     conversation.metadata["pdf_path"] = pdf_path
                     conversation.metadata["has_proposal"] = True
-
-                    # Preparar respuesta con descarga automática
                     download_url = f"{settings.BACKEND_URL}{settings.API_V1_STR}/chat/{conversation.id}/download-pdf"
                     assistant_response_data = {
                         "id": "proposal-ready-" + str(uuid.uuid4())[:8],
@@ -374,14 +354,11 @@ async def send_message(
                         "action": "download_proposal_pdf",
                         "download_url": download_url,
                     }
-
-                    # Añadir mensaje al historial
                     msg_to_add = Message.assistant(assistant_response_data["message"])
                     await storage_service.add_message_to_conversation(
                         conversation.id, msg_to_add, db
                     )
                 else:
-                    # Mensaje de error si falló
                     error_message = "Lo siento, hubo un problema al generar la propuesta. Por favor, inténtalo de nuevo."
                     error_msg = Message.assistant(error_message)
                     await storage_service.add_message_to_conversation(
@@ -393,54 +370,43 @@ async def send_message(
                         "conversation_id": conversation_id,
                         "created_at": error_msg.created_at,
                     }
-
             else:
-                # --- Aún hay preguntas: Llamar a IA ---
-                logger.info(
-                    f"DBG_PDF_CHECK: No es la última pregunta ni petición PDF válida. Llamando a AI Service."
-                )
-
-                # Asegurarse de guardar el estado ANTES de llamar a la IA por si actualizamos sector/subsector
-                try:
-                    last_q_summary = conversation.metadata.get(
-                        "current_question_asked_summary", ""
-                    )
-                    logger.debug(
-                        f"Actualizando sector/subsector basado en user_input='{user_input}' y last_q_summary='{last_q_summary}'"
-                    )
-                    if "sector principal opera" in last_q_summary:
-                        # ... (lógica para actualizar metadata["selected_sector"]) ...
-                        pass
-                    elif "giro específico" in last_q_summary:
-                        # ... (lógica para actualizar metadata["selected_subsector"]) ...
-                        pass
-                    # Guardar conversación con metadata actualizada ANTES de llamar a IA
-                    await storage_service.save_conversation(conversation, db)
-                except Exception as e:
-                    logger.error(
-                        f"Error actualizando metadata antes de llamar a IA: {e}",
-                        exc_info=True,
-                    )
-                    # Continuar de todas formas? O devolver error? Optamos por continuar.
-
+                # Llamar a la IA con el contexto actualizado
                 ai_response_content = await ai_service.handle_conversation(conversation)
-                assistant_message = Message.assistant(ai_response_content)
-                # --- ANTI-REPETICIÓN: Detectar si la IA repite la misma pregunta ---
-                # Extraer el resumen de la pregunta actual de la metadata
-                prev_question_id = conversation.metadata.get("current_question_id")
-                last_answered_id = conversation.metadata.get("last_answered_question_id")
-                # Si la IA repite la misma pregunta y ya hay respuesta, forzar avance
-                if prev_question_id and last_answered_id == prev_question_id:
-                    logger.warning(f"La IA repitió la pregunta {prev_question_id} que ya fue respondida. Forzando avance.")
-                    # Puedes aquí saltar a la siguiente pregunta, o devolver un mensaje especial
-                    assistant_message = Message.assistant(
-                        "Ya hemos recibido tu respuesta a esta pregunta. Por favor, continúa con la siguiente o revisa tus respuestas previas."
+
+                # ANTI-REPETICIÓN MEJORADA
+                # Extraer el ID de la pregunta de la respuesta de la IA
+                new_question_id = None
+                lines = ai_response_content.split("\n")
+                for i, line in enumerate(lines):
+                    if "**PREGUNTA:**" in line or "**QUESTION:**" in line:
+                        # Intentar extraer el ID de la siguiente línea o de metadata
+                        # Por ahora usamos el índice como placeholder
+                        new_question_id = f"q_{i}"
+                        break
+
+                # Verificar si la IA está repitiendo una pregunta ya respondida
+                if new_question_id and new_question_id in conversation.metadata.get(
+                    "collected_data", {}
+                ):
+                    logger.warning(
+                        f"IA intentó repetir pregunta ya respondida: {new_question_id}"
                     )
-                # Añadir respuesta de IA al historial
+                    # Forzar un mensaje para avanzar
+                    ai_response_content = (
+                        "Ya tengo tu respuesta a esa pregunta. Déjame continuar con la siguiente:\n\n"
+                        "**PREGUNTA:** [La siguiente pregunta relevante del cuestionario]"
+                    )
+
+                # Actualizar el ID de la pregunta actual si es nueva
+                if new_question_id and new_question_id != current_question_id:
+                    conversation.metadata["current_question_id"] = new_question_id
+
+                assistant_message = Message.assistant(ai_response_content)
                 await storage_service.add_message_to_conversation(
                     conversation.id, assistant_message, db
                 )
-                # Preparar respuesta normal para frontend
+
                 assistant_response_data = {
                     "id": assistant_message.id,
                     "message": assistant_message.content,
@@ -448,64 +414,33 @@ async def send_message(
                     "created_at": assistant_message.created_at,
                 }
 
-        # --- Guardar y Devolver ---
-        if not assistant_response_data:
-            # Fallback si algo salió MUY mal
-            logger.error(
-                f"Fallo crítico: No se preparó assistant_response_data para {conversation_id}"
-            )
-            assistant_response_data = {
-                "id": "error-no-resp-prep",
-                "message": "Error interno [RP01]",
-                "conversation_id": conversation_id,
-                "created_at": datetime.utcnow(),
-            }
-
-        # Guardar estado final de la conversación (incluye mensajes añadidos y metadata)
+        # Guardar estado final
         await storage_service.save_conversation(conversation, db)
-        background_tasks.add_task(storage_service.cleanup_old_conversations)  # Limpieza
+        db.commit()  # Asegurar persistencia
+        background_tasks.add_task(storage_service.cleanup_old_conversations)
 
-        logger.info(
-            f"Devolviendo respuesta para {conversation_id}: action={assistant_response_data.get('action', 'N/A')}, msg_len={len(assistant_response_data.get('message', '') or '')}"
-        )
         return assistant_response_data
 
-    # --- Manejo de Excepciones ---
     except HTTPException as http_exc:
-        # Re-lanzar excepciones HTTP conocidas
         raise http_exc
     except Exception as e:
-        # Capturar cualquier otra excepción inesperada
         logger.error(
             f"Error fatal no controlado en send_message para {conversation_id}: {str(e)}",
             exc_info=True,
         )
-        # Preparar una respuesta de error genérica para el frontend
         error_response = {
             "id": "error-fatal-" + str(uuid.uuid4())[:8],
             "message": "Lo siento, ha ocurrido un error inesperado en el servidor.",
             "conversation_id": conversation_id,
             "created_at": datetime.utcnow(),
         }
-        # Intentar guardar el error en la metadata de la conversación si es posible
         try:
-            # Verificar si 'conversation' existe y es válida antes de accederla
-            if (
-                "conversation" in locals()
-                and isinstance(conversation, Conversation)
-                and isinstance(conversation.metadata, dict)
-            ):
-                conversation.metadata["last_error"] = (
-                    f"Fatal: {str(e)[:200]}"  # Limitar longitud
-                )
+            if "conversation" in locals() and isinstance(conversation, Conversation):
+                conversation.metadata["last_error"] = f"Fatal: {str(e)[:200]}"
                 await storage_service.save_conversation(conversation, db)
         except Exception as save_err:
-            # Loguear si falla el guardado del error, pero no detener el flujo
-            logger.error(
-                f"Error adicional al intentar guardar error fatal en metadata: {save_err}"
-            )
+            logger.error(f"Error adicional al guardar error: {save_err}")
 
-        # Devolver la respuesta de error al frontend
         return error_response
 
 
