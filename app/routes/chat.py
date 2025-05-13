@@ -320,6 +320,8 @@ async def send_message(
                     ),
                     "answer": user_input.strip(),
                 }
+                # Guardar el último question_id respondido
+                conversation.metadata["last_answered_question_id"] = question_id
 
                 logger.info(
                     f"Guardada respuesta para {question_id}: '{user_input.strip()}'"
@@ -423,6 +425,17 @@ async def send_message(
 
                 ai_response_content = await ai_service.handle_conversation(conversation)
                 assistant_message = Message.assistant(ai_response_content)
+                # --- ANTI-REPETICIÓN: Detectar si la IA repite la misma pregunta ---
+                # Extraer el resumen de la pregunta actual de la metadata
+                prev_question_id = conversation.metadata.get("current_question_id")
+                last_answered_id = conversation.metadata.get("last_answered_question_id")
+                # Si la IA repite la misma pregunta y ya hay respuesta, forzar avance
+                if prev_question_id and last_answered_id == prev_question_id:
+                    logger.warning(f"La IA repitió la pregunta {prev_question_id} que ya fue respondida. Forzando avance.")
+                    # Puedes aquí saltar a la siguiente pregunta, o devolver un mensaje especial
+                    assistant_message = Message.assistant(
+                        "Ya hemos recibido tu respuesta a esta pregunta. Por favor, continúa con la siguiente o revisa tus respuestas previas."
+                    )
                 # Añadir respuesta de IA al historial
                 await storage_service.add_message_to_conversation(
                     conversation.id, assistant_message, db

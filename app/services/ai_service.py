@@ -166,27 +166,36 @@ class AIServiceLLMDriven:
             system_prompt = get_llm_driven_master_prompt(current_metadata)
             messages = [{"role": "system", "content": system_prompt}]
 
-            # Si tenemos informacion previa del usuario, añadir contexto adicional
-            if sector or subsector or location:
-                context_info = ["User pre-information:"]
-                if client_name and client_name != "Client":
-                    context_info.append(f"- Name: {client_name}")
-                if sector:
-                    context_info.append(f"- Sector: {sector}")
-                if subsector:
-                    context_info.append(f"- Subsector: {subsector}")
-                if location:
-                    context_info.append(f"- Ubicacion: {location}")
+            # Añadir SIEMPRE contexto adicional del usuario si hay datos relevantes
+            user_name = current_metadata.get("user_name")
+            user_email = current_metadata.get("user_email")
+            user_location = current_metadata.get("user_location")
+            sector = current_metadata.get("selected_sector")
+            subsector = current_metadata.get("selected_subsector")
+            client_name = current_metadata.get("client_name")
 
-                # Instruccion para la AI sobre como usar esta informacion
+            context_info = []
+            if user_name:
+                context_info.append(f"- Name: {user_name}")
+            if user_email:
+                context_info.append(f"- Email: {user_email}")
+            if user_location:
+                context_info.append(f"- Location: {user_location}")
+            if sector:
+                context_info.append(f"- Sector: {sector}")
+            if subsector:
+                context_info.append(f"- Subsector: {subsector}")
+            if client_name and client_name != "Client":
+                context_info.append(f"- Client Name: {client_name}")
+
+            if context_info:
+                context_info.insert(0, "User pre-information:")
                 context_info.append(
                     "Please adapt your introduction considering this information and avoid asking for data we already know."
                 )
-
-                # Añadir mensaje de contexto
                 context_message = {"role": "system", "content": "\n".join(context_info)}
                 messages.append(context_message)
-                logger.info("Added additional user context to the prompt.")
+                logger.info("Added additional user context to the prompt (always, if present).")
 
             # Añadir historial de conversación (si existe)
             if conversation.messages:
