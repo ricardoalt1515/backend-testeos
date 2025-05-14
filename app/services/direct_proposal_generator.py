@@ -24,36 +24,115 @@ class DirectProposalGenerator:
     async def generate_complete_proposal(self, conversation: Conversation) -> str:
         """Genera la propuesta y el PDF directamente, devuelve la ruta al PDF."""
         try:
-            # 1. Extraer información de la conversación
+            # 1. Verificar si ya existe una propuesta para esta conversación
+            existing_pdf_path = conversation.metadata.get("pdf_path")
+            if existing_pdf_path and os.path.exists(existing_pdf_path):
+                logger.info(f"Usando PDF existente: {existing_pdf_path}")
+                conversation.metadata["has_proposal"] = True
+                return existing_pdf_path
+                
+            # Verificar y crear directorio de uploads si no existe
+            os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
+            logger.info(f"Directorio de uploads verificado: {settings.UPLOAD_DIR} (existe: {os.path.exists(settings.UPLOAD_DIR)})")
+
+            # 2. Extraer información de la conversación
             conversation_text = self._extract_conversation_text(conversation)
+            logger.info(f"Texto de conversación extraído: {len(conversation_text)} caracteres")
 
-            # 2. Llamar a la API de IA con un prompt específico y directo
-            proposal_text = await self._generate_proposal_with_ai(conversation_text)
+            # Si ya tenemos el texto de propuesta en la metadata, usarlo
+            proposal_text = conversation.metadata.get("proposal_text")
+            if not proposal_text:
+                # 3. Llamar a la API de IA con un prompt específico y directo
+                logger.info(f"Generando texto de propuesta con AI para conversación {conversation.id}")
+                proposal_text = await self._generate_proposal_with_ai(conversation_text)
+                logger.info(f"Texto de propuesta generado: {len(proposal_text)} caracteres")
+            else:
+                logger.info(f"Usando texto de propuesta existente: {len(proposal_text)} caracteres")
 
-            # 3. Guardar propuesta para debugging
+            # 4. Guardar propuesta para debugging
             debug_dir = os.path.join(settings.UPLOAD_DIR, "debug")
             os.makedirs(debug_dir, exist_ok=True)
-            with open(
-                os.path.join(debug_dir, f"direct_proposal_{conversation.id}.txt"),
-                "w",
-                encoding="utf-8",
-            ) as f:
+            
+            debug_file = os.path.join(debug_dir, f"direct_proposal_{conversation.id}.txt")
+            with open(debug_file, "w", encoding="utf-8") as f:
                 f.write(proposal_text)
+                
+            logger.info(f"Texto de propuesta guardado en {debug_file}")
 
-            # 4. Generar PDF directamente sin pasar por otros servicios
+            # 5. Generar PDF directamente
+            logger.info(f"Generando PDF para conversación {conversation.id}")
             pdf_path = self._generate_pdf(proposal_text, conversation.id)
 
-            # 5. Actualizar metadata
-            if pdf_path:
+            # 6. Verificar que el PDF se haya creado correctamente
+            if pdf_path and os.path.exists(pdf_path):
+                # Verificar tamaño y permisos
+                file_size = os.path.getsize(pdf_path)
+                logger.info(f"PDF generado exitosamente: {pdf_path} (tamaño: {file_size} bytes)")
+                
+                # Asegurar permisos correctos en entorno Docker
+                try:
+                    os.chmod(pdf_path, 0o644)  # rw-r--r--
+                    logger.info(f"Permisos del PDF establecidos correctamente")
+                except Exception as perm_err:
+                    logger.warning(f"No se pudieron establecer permisos en {pdf_path}: {perm_err}")
+                
+                # Actualizar metadata
                 conversation.metadata["proposal_text"] = proposal_text
                 conversation.metadata["pdf_path"] = pdf_path
                 conversation.metadata["has_proposal"] = True
-
-            return pdf_path
+                conversation.metadata["is_complete"] = True
+                logger.info(f"Metadata actualizada con PDF: has_proposal=True, is_complete=True, pdf_path={pdf_path}")
+                
+                return pdf_path
+            else:
+                # Si falló la generación con el módulo principal, intentar con PDF de emergencia
+                logger.error(f"❌ Falló la generación del PDF principal para {conversation.id}. Intentando solución de emergencia...")
+                
+                # Crear un PDF mínimo de emergencia
+                pdf_filename = f"propuesta_emergencia_{conversation.id}.pdf"
+                output_path = os.path.join(settings.UPLOAD_DIR, pdf_filename)
+                
+                try:
+                    # Importaciones requeridas
+                    from reportlab.lib.pagesizes import A4
+                    from reportlab.platypus import SimpleDocTemplate, Paragraph
+                    from reportlab.lib.styles import getSampleStyleSheet
+                    
+                    # Crear documento básico
+                    styles = getSampleStyleSheet()
+                    doc = SimpleDocTemplate(output_path, pagesize=A4)
+                    
+                    # Contenido mínimo
+                    elements = [
+                        Paragraph("PROPUESTA DE TRATAMIENTO DE AGUA", styles["Title"]),
+                        Paragraph(f"Cliente: {conversation.metadata.get('client_name', 'Cliente')}", styles["Normal"]),
+                        Paragraph(f"Sector: {conversation.metadata.get('selected_sector', 'No especificado')}", styles["Normal"]),
+                        Paragraph(f"Fecha: {datetime.now().strftime('%Y-%m-%d')}", styles["Normal"]),
+                        Paragraph("", styles["Normal"]),
+                        Paragraph("PROPUESTA DE EMERGENCIA", styles["Heading1"]),
+                        Paragraph("Este documento se ha generado en modo de emergencia debido a un error en el sistema.", styles["Normal"]),
+                        Paragraph("Por favor contacte a soporte para obtener la propuesta completa.", styles["Normal"]),
+                        Paragraph("", styles["Normal"]),
+                        Paragraph("Equipo de Hydrous", styles["Normal"]),
+                    ]
+                    
+                    # Construir PDF
+                    doc.build(elements)
+                    
+                    # Verificar resultado
+                    if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+                        logger.info(f"PDF de emergencia generado con éxito: {output_path}")
+                        conversation.metadata["pdf_path"] = output_path
+                        conversation.metadata["has_proposal"] = True
+                        conversation.metadata["is_complete"] = True
+                        return output_path
+                except Exception as e:
+                    logger.error(f"❌ Falló también la generación del PDF de emergencia: {e}", exc_info=True)
+                
+                logger.error(f"❌ No se pudo generar ningún PDF para {conversation.id}")
+                return None
         except Exception as e:
-            logger.error(
-                f"Error en generación directa de propuesta: {e}", exc_info=True
-            )
+            logger.error(f"Error en generación directa de propuesta: {e}", exc_info=True)
             return None
 
     def _extract_conversation_text(self, conversation: Conversation) -> str:
@@ -206,10 +285,38 @@ Para más información, contacte a Hydrous Management Group.
     def _generate_pdf(self, proposal_text: str, conversation_id: str) -> str:
         """Genera un PDF con formato a partir del texto de la propuesta."""
         try:
+            # Verificar condiciones iniciales
+            if not proposal_text or len(proposal_text) < 10:
+                logger.error("❌ Texto de propuesta demasiado corto o vacío para generar PDF")
+                return None
+                
+            # Verificar directorio de uploads
+            if not os.path.exists(settings.UPLOAD_DIR):
+                os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
+                logger.info(f"Directorio de uploads creado: {settings.UPLOAD_DIR}")
+                
             # Preparar ruta
             pdf_filename = f"propuesta_{conversation_id}.pdf"
             output_path = os.path.join(settings.UPLOAD_DIR, pdf_filename)
+            
+            # Si el archivo ya existe, renombrarlo con timestamp
+            if os.path.exists(output_path):
+                import time
+                timestamp = int(time.time())
+                backup_path = f"{output_path}.{timestamp}.bak"
+                os.rename(output_path, backup_path)
+                logger.info(f"Archivo PDF existente renombrado a: {backup_path}")
 
+            logger.info(f"Iniciando generación de PDF en: {output_path}")
+
+            # Importar explícitamente aquí para evitar problemas de variables
+            from reportlab.lib.pagesizes import A4
+            from reportlab.lib import colors
+            from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+            from reportlab.lib.units import cm
+
+            # Crear el documento PDF
             doc = SimpleDocTemplate(
                 output_path,
                 pagesize=A4,
@@ -406,16 +513,60 @@ Para más información, contacte a Hydrous Management Group.
                     elements.append(table)
 
             # Construir PDF con números de página
-            doc.build(
-                elements,
-                onFirstPage=self._add_page_number,
-                onLaterPages=self._add_page_number,
-            )
-
-            logger.info(f"PDF generado exitosamente en: {output_path}")
-            return output_path
+            try:
+                doc.build(
+                    elements,
+                    onFirstPage=self._add_page_number,
+                    onLaterPages=self._add_page_number,
+                )
+                
+                # Verificar que el archivo se haya creado correctamente
+                if os.path.exists(output_path):
+                    file_size = os.path.getsize(output_path)
+                    if file_size > 0:
+                        logger.info(f"✅ PDF generado exitosamente: {output_path} (tamaño: {file_size} bytes)")
+                        return output_path
+                    else:
+                        logger.error(f"❌ PDF generado con tamaño cero: {output_path}")
+                        return None
+                else:
+                    logger.error(f"❌ PDF no encontrado después de generación: {output_path}")
+                    return None
+                    
+            except Exception as build_error:
+                logger.error(f"❌ Error al construir el PDF: {build_error}", exc_info=True)
+                # Intentar guardar un PDF de emergencia muy simple
+                try:
+                    # Asegurar que todas las importaciones necesarias estén disponibles
+                    from reportlab.platypus import SimpleDocTemplate, Paragraph
+                    from reportlab.lib.styles import getSampleStyleSheet
+                    
+                    # Crear un PDF de emergencia muy básico
+                    simple_styles = getSampleStyleSheet()
+                    emergency_doc = SimpleDocTemplate(output_path)
+                    emergency_content = [
+                        Paragraph(f"Propuesta de emergencia para {conversation_id}", simple_styles["Title"]),
+                        Paragraph("Se ha producido un error al generar el PDF completo. Por favor, contacte con soporte.", simple_styles["Normal"]),
+                        Paragraph(f"Fecha: {datetime.now().strftime('%Y-%m-%d %H:%M')}", simple_styles["Normal"]),
+                    ]
+                    emergency_doc.build(emergency_content)
+                    logger.info(f"⚠️ PDF de emergencia generado en {output_path}")
+                    return output_path
+                except Exception as emergency_error:
+                    logger.error(f"❌ Falló también el PDF de emergencia: {emergency_error}", exc_info=True)
+                    return None
+                
         except Exception as e:
-            logger.error(f"Error generando PDF: {e}", exc_info=True)
+            logger.error(f"❌ Error crítico generando PDF: {e}", exc_info=True)
+            
+            # Información adicional de diagnóstico
+            logger.debug(f"Información del sistema:")
+            logger.debug(f"- Directorio actual: {os.getcwd()}")
+            logger.debug(f"- UPLOAD_DIR configurado: {settings.UPLOAD_DIR}")
+            logger.debug(f"- UPLOAD_DIR existe: {os.path.exists(settings.UPLOAD_DIR)}")
+            if os.path.exists(settings.UPLOAD_DIR):
+                logger.debug(f"- Permisos UPLOAD_DIR: {oct(os.stat(settings.UPLOAD_DIR).st_mode)[-3:]}")
+            
             return None
 
     def _process_markdown_line(

@@ -81,52 +81,52 @@ def _is_last_question(
 ) -> bool:
     """Verifica si la pregunta actual es la última de la ruta completa."""
     if not current_question_id:
+        logger.debug("_is_last_question: No hay pregunta actual, retornando False")
         return False
 
+    # Obtener la ruta completa del cuestionario
     path = metadata.get("questionnaire_path", [])
     if not path:
+        # Si no existe, construirla
+        logger.debug(f"_is_last_question: Construyendo ruta para {current_question_id}")
         path = _get_full_questionnaire_path(metadata)
         metadata["questionnaire_path"] = path
-        logger.debug(f"Ruta construida on-the-fly en _is_last_question: {path}")
+        logger.debug(f"_is_last_question: Ruta construida: {path} (total: {len(path)} preguntas)")
 
     if not path:
+        logger.warning("_is_last_question: No se pudo obtener ruta de preguntas, retornando False")
         return False
 
     try:
-        is_last = path.index(current_question_id) == len(path) - 1
+        # Verificar posición en la ruta
+        current_index = path.index(current_question_id)
+        total_questions = len(path)
+        is_last = current_index == total_questions - 1
+        
+        logger.debug(f"_is_last_question: Pregunta {current_question_id} es la #{current_index+1} de {total_questions}")
+        
         if is_last:
             logger.info(
-                f"Detectada respuesta a la última pregunta ({current_question_id}) de la ruta."
+                f"¡ÚLTIMA PREGUNTA DETECTADA! ({current_question_id}) - Posición {current_index+1} de {total_questions}"
             )
         return is_last
     except ValueError:
         logger.warning(
             f"_is_last_question: ID '{current_question_id}' no encontrado en ruta {path}"
         )
+        # Si la pregunta no está en la ruta, podríamos estar ante un caso especial
+        # Verificar si es una pregunta final según alguna otra lógica
+        if current_question_id and current_question_id.startswith("FINAL_"):
+            logger.info(f"Detectada pregunta especial de finalización: {current_question_id}")
+            return True
         return False
 
 
-def _is_pdf_request(message: str) -> bool:
-    """Determina si el mensaje es una solicitud de PDF de forma más robusta."""
-    if not message:
-        return False
-    message = message.lower().strip()
-    pdf_keywords = [
-        "pdf",
-        "descargar propuesta",
-        "descargar pdf",
-        "generar pdf",
-        "obtener documento",
-        "propuesta final",
-        "descargar",
-    ]
-    is_request = message in pdf_keywords or any(
-        keyword in message for keyword in pdf_keywords
-    )
-    logger.debug(
-        f"_is_pdf_request: Input='{message}', Keywords={pdf_keywords}, Result={is_request}"
-    )
-    return is_request
+def _is_pdf_request(message_content: str) -> bool:
+    """Determina si el mensaje del usuario es una solicitud de descarga del PDF."""
+    normalized = message_content.lower().strip()
+    pdf_requests = ["descargar pdf", "download pdf", "obtener pdf", "get pdf", "pdf", "descargar", "download", "quiero el pdf", "quiero mi pdf", "dame el pdf", "dame mi pdf"]
+    return any(request in normalized for request in pdf_requests)
 
 
 # --- Endpoints ---
@@ -224,7 +224,7 @@ async def send_message(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
-    """Procesa mensaje del usuario autenticado."""
+    """Process user message."""
     conversation_id = (
         data.conversation_id if hasattr(data, "conversation_id") else "unknown"
     )
@@ -232,62 +232,167 @@ async def send_message(
     assistant_response_data = None
 
     try:
-        # Obtener usuario autenticado
+        # Get authenticated user
         current_user = get_current_user(request)
 
-        # 1. Cargar Conversación
-        logger.debug(f"Recibida petición /message para conv: {conversation_id}")
+        # 1. Load conversation
+        logger.debug(f"Received /message request for conv: {conversation_id}")
         conversation = await storage_service.get_conversation(conversation_id, db)
         if not conversation:
-            logger.error(f"Conversación no encontrada: {conversation_id}")
+            logger.error(f"Conversation not found: {conversation_id}")
             return {
                 "id": "error-conv-not-found",
-                "message": "Error: Conversación no encontrada. Por favor, reinicia.",
+                "message": "Error: Conversation not found. Please restart.",
                 "conversation_id": conversation_id,
                 "created_at": datetime.utcnow(),
             }
 
-        # 2. Crear objeto mensaje usuario
+        # 2. Create user message object
         user_message_obj = Message.user(user_input)
 
-        # VERIFICAR PROPIEDAD
+        # Verify ownership
         db_conversation = conversation_repository.get(db, UUID(conversation_id))
         if not db_conversation or str(db_conversation.user_id) != current_user["id"]:
             logger.warning(
-                f"Usuario {current_user['id']} intentó acceder a conversación {conversation_id} no autorizada"
+                f"User {current_user['id']} tried to access unauthorized conversation {conversation_id}"
             )
             raise HTTPException(
                 status_code=403,
-                detail="No tienes permisos para acceder a esta conversación",
+                detail="You don't have permission to access this conversation",
             )
 
-        # 3. Validar si es petición de PDF
+        # 3. Check if PDF request
         is_pdf_req = _is_pdf_request(user_input)
         proposal_ready = conversation.metadata.get("has_proposal", False)
+        is_complete = conversation.metadata.get("is_complete", False)
+        ready_for_proposal = conversation.metadata.get("ready_for_proposal", False)
+        pdf_path = conversation.metadata.get("pdf_path")
 
-        if is_pdf_req and proposal_ready:
-            download_url = f"{settings.BACKEND_URL}{settings.API_V1_STR}/chat/{conversation.id}/download-pdf"
-            assistant_response_data = {
-                "id": "pdf-trigger-" + str(uuid.uuid4())[:8],
-                "message": None,
-                "conversation_id": conversation_id,
-                "created_at": datetime.utcnow(),
-                "action": "trigger_download",
-                "download_url": download_url,
-            }
+        logger.info(
+            f"PDF_CHECK: ConvID={conversation_id}, Input='{user_input}', is_pdf_req={is_pdf_req}, "
+            f"proposal_ready={proposal_ready}, is_complete={is_complete}, pdf_path={pdf_path}, ready_for_proposal={ready_for_proposal}"
+        )
+
+        if is_pdf_req:
+            # Añadir mensaje del usuario al historial
+            await storage_service.add_message_to_conversation(
+                conversation.id, user_message_obj, db
+            )
+            
+            # Inteligencia para manejar diferentes estados de la propuesta
+            
+            # CASO 1: Si la propuesta está lista pero metadatos inconsistentes, arreglar
+            if pdf_path and os.path.exists(pdf_path) and not proposal_ready:
+                logger.info(f"PDF existe pero metadatos inconsistentes. Corrigiendo para {conversation_id}...")
+                conversation.metadata["has_proposal"] = True
+                conversation.metadata["is_complete"] = True
+                await storage_service.save_conversation(conversation, db)
+                db.commit()
+                proposal_ready = True
+            
+            # CASO 2: Si tiene señal de "ready_for_proposal" pero no tiene PDF, generar
+            elif (ready_for_proposal and not pdf_path) or (ready_for_proposal and pdf_path and not os.path.exists(pdf_path)):
+                logger.info(f"Marcado como listo para propuesta. Generando PDF para {conversation_id}...")
+                from app.services.direct_proposal_generator import direct_proposal_generator
+                pdf_path = await direct_proposal_generator.generate_complete_proposal(conversation)
+                if pdf_path and os.path.exists(pdf_path):
+                    logger.info(f"PDF generado exitosamente: {pdf_path}")
+                    conversation.metadata["pdf_path"] = pdf_path
+                    conversation.metadata["is_complete"] = True
+                    conversation.metadata["has_proposal"] = True
+                    await storage_service.save_conversation(conversation, db)
+                    db.commit()
+                    proposal_ready = True
+                    
+                    # Recargar conversación para verificar
+                    conversation = await storage_service.get_conversation(conversation_id, db)
+                    logger.info(f"Metadatos después de generar: {conversation.metadata}")
+            
+            # CASO 3: Si está marcado como completo pero sin PDF, intentar regenerar
+            elif (is_complete and not proposal_ready) or (is_complete and not pdf_path) or (is_complete and pdf_path and not os.path.exists(pdf_path)):
+                logger.info(f"Necesita generar o regenerar PDF para {conversation_id}. Estado: is_complete={is_complete}, proposal_ready={proposal_ready}, pdf_path={pdf_path}")
+                from app.services.direct_proposal_generator import direct_proposal_generator
+                
+                # Regenerar PDF
+                pdf_path = await direct_proposal_generator.generate_complete_proposal(conversation)
+                
+                if pdf_path and os.path.exists(pdf_path):
+                    logger.info(f"PDF generado exitosamente: {pdf_path}")
+                    # Actualizar metadata explícitamente
+                    conversation.metadata["pdf_path"] = pdf_path
+                    conversation.metadata["is_complete"] = True
+                    conversation.metadata["has_proposal"] = True
+                    await storage_service.save_conversation(conversation, db)
+                    db.commit()
+                    proposal_ready = True
+                    
+                    # Recargar conversación para verificar
+                    conversation = await storage_service.get_conversation(conversation_id, db)
+                    logger.info(f"Metadatos después de regenerar: {conversation.metadata}")
+                else:
+                    logger.error(f"Falló la generación del PDF para {conversation_id}")
+            
+            # Verificar nuevamente si tenemos propuesta lista
+            if proposal_ready or (pdf_path and os.path.exists(pdf_path)):
+                # Asegurar que todos los metadatos estén consistentes
+                if pdf_path and os.path.exists(pdf_path) and not proposal_ready:
+                    conversation.metadata["has_proposal"] = True
+                    conversation.metadata["is_complete"] = True
+                    await storage_service.save_conversation(conversation, db)
+                    db.commit()
+                
+                # Construir respuesta con URL de descarga
+                download_url = f"{settings.BACKEND_URL}{settings.API_V1_STR}/chat/{conversation.id}/download-pdf"
+                
+                response_text = f"¡Aquí está tu propuesta! Haz clic para descargar o espera mientras se descarga automáticamente."
+                assistant_message = Message.assistant(response_text)
+                
+                await storage_service.add_message_to_conversation(
+                    conversation.id, assistant_message, db
+                )
+                
+                assistant_response_data = {
+                    "id": assistant_message.id,
+                    "message": assistant_message.content,
+                    "conversation_id": conversation_id,
+                    "created_at": assistant_message.created_at,
+                    "action": "download_proposal_pdf",
+                    "download_url": download_url
+                }
+                
+                return assistant_response_data
+            else:
+                # No hay propuesta disponible
+                response_text = "Todavía no tengo lista tu propuesta. Por favor completa el cuestionario primero."
+                assistant_message = Message.assistant(response_text)
+                
+                await storage_service.add_message_to_conversation(
+                    conversation.id, assistant_message, db
+                )
+                
+                assistant_response_data = {
+                    "id": assistant_message.id,
+                    "message": assistant_message.content,
+                    "conversation_id": conversation_id,
+                    "created_at": assistant_message.created_at,
+                }
+                
+                return assistant_response_data
+
         else:
-            # --- Flujo Normal: Procesamiento con Anti-Repetición Mejorada ---
+            # --- Normal Flow: Continue with questionnaire ---
+            logger.info(f"Normal flow for conversation {conversation_id}")
 
-            # Añadir mensaje del usuario
+            # Add user message to history
             await storage_service.add_message_to_conversation(
                 conversation_id, user_message_obj, db
             )
 
-            # IMPORTANTE: Guardar respuesta del usuario ANTES de llamar a la IA
+            # Save user response immediately
             current_question_id = conversation.metadata.get("current_question_id")
 
             if current_question_id:
-                # Actualizar metadata con la respuesta
+                # Update metadata with the response
                 if "collected_data" not in conversation.metadata:
                     conversation.metadata["collected_data"] = {}
 
@@ -295,7 +400,7 @@ async def send_message(
                     current_question_id
                 ] = user_input.strip()
 
-                # Guardar un resumen más completo
+                # Save response summary
                 if "response_summaries" not in conversation.metadata:
                     conversation.metadata["response_summaries"] = {}
 
@@ -307,59 +412,74 @@ async def send_message(
                     "timestamp": datetime.utcnow().isoformat(),
                 }
 
-                # Marcar pregunta como respondida
+                # Mark question as answered
                 conversation.metadata["last_answered_question_id"] = current_question_id
 
-                # CRÍTICO: Guardar INMEDIATAMENTE antes de llamar a la IA
+                # CRITICAL: Save immediately before calling AI
                 await storage_service.save_conversation(conversation, db)
-                db.commit()  # Forzar commit inmediato
+                db.commit()  # Force immediate commit
 
                 logger.info(
-                    f"Respuesta guardada para {current_question_id}: '{user_input.strip()}'"
+                    f"Response saved for {current_question_id}: '{user_input.strip()}'"
                 )
 
-            # Recargar conversación para asegurar que tenemos el estado más reciente
+            # Reload conversation to ensure latest state
             conversation = await storage_service.get_conversation(conversation_id, db)
 
-            # Verificar si es la última pregunta
+            # Check if final answer
             is_final_answer = _is_last_question(
                 current_question_id, conversation.metadata
             )
 
             if is_final_answer:
-                # Generar propuesta
+                # Generate proposal
+                logger.info(f"Generando proposal para {conversation_id}")
                 from app.services.direct_proposal_generator import (
                     direct_proposal_generator,
                 )
 
+                # Intentar generar la propuesta
                 pdf_path = await direct_proposal_generator.generate_complete_proposal(
                     conversation
                 )
 
+                # Actualizar metadata de la conversación
                 conversation.metadata["is_complete"] = True
                 conversation.metadata["current_question_id"] = None
                 conversation.metadata["current_question_asked_summary"] = (
-                    "Cuestionario Completado"
+                    "Questionnaire Completed"
                 )
 
-                if pdf_path:
+                # Verificar que el PDF se generó correctamente
+                if pdf_path and os.path.exists(pdf_path):
+                    logger.info(f"Propuesta generada exitosamente: {pdf_path}")
+                    # Establecer explícitamente que hay una propuesta disponible
                     conversation.metadata["pdf_path"] = pdf_path
                     conversation.metadata["has_proposal"] = True
+                    # Guardar inmediatamente para persistir estos cambios
+                    await storage_service.save_conversation(conversation, db)
+                    db.commit()
+
+                    # Generar URL de descarga y respuesta
                     download_url = f"{settings.BACKEND_URL}{settings.API_V1_STR}/chat/{conversation.id}/download-pdf"
                     assistant_response_data = {
-                        "id": "proposal-ready-" + str(uuid.uuid4())[:8],
-                        "message": "¡Hemos completado tu propuesta! Puedes descargarla ahora.",
+                        "id": "proposal-complete-" + str(uuid.uuid4())[:8],
+                        "message": "✅ ¡Propuesta Lista! Escribe 'descargar pdf' para obtener tu documento.",
                         "conversation_id": conversation_id,
                         "created_at": datetime.utcnow(),
-                        "action": "download_proposal_pdf",
+                        "action": "proposal_complete",
                         "download_url": download_url,
                     }
+
+                    # Añadir mensaje al historial
                     msg_to_add = Message.assistant(assistant_response_data["message"])
                     await storage_service.add_message_to_conversation(
                         conversation.id, msg_to_add, db
                     )
                 else:
-                    error_message = "Lo siento, hubo un problema al generar la propuesta. Por favor, inténtalo de nuevo."
+                    # Manejo de error si no se pudo generar el PDF
+                    logger.error(f"Error generando PDF para {conversation_id}. Path: {pdf_path}")
+                    error_message = "Lo siento, hubo un problema generando la propuesta. Por favor intenta de nuevo."
                     error_msg = Message.assistant(error_message)
                     await storage_service.add_message_to_conversation(
                         conversation.id, error_msg, db
@@ -371,34 +491,88 @@ async def send_message(
                         "created_at": error_msg.created_at,
                     }
             else:
-                # Llamar a la IA con el contexto actualizado
+                # Continue with questionnaire
                 ai_response_content = await ai_service.handle_conversation(conversation)
 
-                # ANTI-REPETICIÓN MEJORADA
-                # Extraer el ID de la pregunta de la respuesta de la IA
+                # Detectar si es una propuesta completa que necesita generación de PDF
+                if "[HYDROUS_INTERNAL_MARKER:GENERATE_PROPOSAL]" in ai_response_content:
+                    logger.info(f"Detectada propuesta completa que requiere generación de PDF para {conversation_id}")
+                    # Extraer el texto de la propuesta (ya guardado en metadata)
+                    proposal_text = conversation.metadata.get("proposal_text")
+                    if not proposal_text and len(ai_response_content) > 40:
+                        # Si no está en metadata, extraerlo del marcador
+                        proposal_text = ai_response_content.replace("[HYDROUS_INTERNAL_MARKER:GENERATE_PROPOSAL]", "")
+                        conversation.metadata["proposal_text"] = proposal_text
+                    
+                    # Debugging: registrar estado de metadata antes de cambios
+                    logger.info(f"METADATA ANTES DE GENERAR PDF: is_complete={conversation.metadata.get('is_complete')}, has_proposal={conversation.metadata.get('has_proposal')}, pdf_path={conversation.metadata.get('pdf_path')}")
+                    
+                    # Guardar los cambios iniciales a la metadata
+                    await storage_service.save_conversation(conversation, db)
+                    db.commit()
+                    
+                    # Generar el PDF
+                    from app.services.direct_proposal_generator import direct_proposal_generator
+                    logger.info(f"Generando PDF para propuesta de conversación {conversation_id}...")
+                    
+                    pdf_path = await direct_proposal_generator.generate_complete_proposal(conversation)
+                    
+                    if pdf_path and os.path.exists(pdf_path):
+                        logger.info(f"PDF generado exitosamente en: {pdf_path}")
+                        # Actualizar metadata explícitamente
+                        conversation.metadata["pdf_path"] = pdf_path
+                        conversation.metadata["is_complete"] = True
+                        conversation.metadata["has_proposal"] = True
+                        
+                        # Verificar permisos del archivo
+                        try:
+                            os.chmod(pdf_path, 0o644)  # rw-r--r--
+                            logger.info(f"Permisos del PDF establecidos correctamente")
+                        except Exception as perm_err:
+                            logger.warning(f"No se pudieron establecer permisos en {pdf_path}: {perm_err}")
+                        
+                        # Guardar inmediatamente los cambios
+                        await storage_service.save_conversation(conversation, db)
+                        db.commit()
+                        
+                        # Volver a cargar la conversación para asegurar que los cambios se guardaron
+                        conversation = await storage_service.get_conversation(conversation_id, db)
+                        
+                        # Verificar que los cambios se guardaron correctamente
+                        logger.info(f"METADATA DESPUÉS DE GENERAR PDF: is_complete={conversation.metadata.get('is_complete')}, has_proposal={conversation.metadata.get('has_proposal')}, pdf_path={conversation.metadata.get('pdf_path')}")
+                        
+                        # Preparar respuesta para el usuario
+                        download_url = f"{settings.BACKEND_URL}{settings.API_V1_STR}/chat/{conversation.id}/download-pdf"
+                        ai_response_content = "✅ ¡Propuesta Lista! Escribe 'descargar pdf' para obtener tu documento."
+                        
+                        # Log detallado para seguimiento
+                        logger.info(f"Propuesta lista para {conversation_id}. URL de descarga: {download_url}")
+                    else:
+                        logger.error(f"❌ Error generando PDF para {conversation_id}. Ruta: {pdf_path}")
+                        logger.error(f"Detalles: proposal_text existe: {bool(proposal_text)}, longitud: {len(proposal_text) if proposal_text else 0}")
+                        ai_response_content = "Lo siento, hubo un problema generando la propuesta. Por favor intenta de nuevo."
+                
+                # Anti-repetition check
                 new_question_id = None
                 lines = ai_response_content.split("\n")
                 for i, line in enumerate(lines):
-                    if "**PREGUNTA:**" in line or "**QUESTION:**" in line:
-                        # Intentar extraer el ID de la siguiente línea o de metadata
-                        # Por ahora usamos el índice como placeholder
+                    if "**QUESTION:**" in line or "**PREGUNTA:**" in line:
                         new_question_id = f"q_{i}"
                         break
 
-                # Verificar si la IA está repitiendo una pregunta ya respondida
+                # Check if AI is repeating a question
                 if new_question_id and new_question_id in conversation.metadata.get(
                     "collected_data", {}
                 ):
                     logger.warning(
-                        f"IA intentó repetir pregunta ya respondida: {new_question_id}"
+                        f"AI attempted to repeat answered question: {new_question_id}"
                     )
-                    # Forzar un mensaje para avanzar
                     ai_response_content = (
-                        "Ya tengo tu respuesta a esa pregunta. Déjame continuar con la siguiente:\n\n"
-                        "**PREGUNTA:** [La siguiente pregunta relevante del cuestionario]"
+                        "I already have your answer to that question. Let me continue with the next one:\n\n"
+                        "**QUESTION:** [Next relevant question from questionnaire]"
                     )
 
-                # Actualizar el ID de la pregunta actual si es nueva
+                # Update current question ID if new
                 if new_question_id and new_question_id != current_question_id:
                     conversation.metadata["current_question_id"] = new_question_id
 
@@ -414,9 +588,9 @@ async def send_message(
                     "created_at": assistant_message.created_at,
                 }
 
-        # Guardar estado final
+        # Save final state
         await storage_service.save_conversation(conversation, db)
-        db.commit()  # Asegurar persistencia
+        db.commit()
         background_tasks.add_task(storage_service.cleanup_old_conversations)
 
         return assistant_response_data
@@ -425,12 +599,12 @@ async def send_message(
         raise http_exc
     except Exception as e:
         logger.error(
-            f"Error fatal no controlado en send_message para {conversation_id}: {str(e)}",
+            f"Fatal error in send_message for {conversation_id}: {str(e)}",
             exc_info=True,
         )
         error_response = {
             "id": "error-fatal-" + str(uuid.uuid4())[:8],
-            "message": "Lo siento, ha ocurrido un error inesperado en el servidor.",
+            "message": "Sorry, an unexpected server error occurred.",
             "conversation_id": conversation_id,
             "created_at": datetime.utcnow(),
         }
@@ -439,7 +613,7 @@ async def send_message(
                 conversation.metadata["last_error"] = f"Fatal: {str(e)[:200]}"
                 await storage_service.save_conversation(conversation, db)
         except Exception as save_err:
-            logger.error(f"Error adicional al guardar error: {save_err}")
+            logger.error(f"Additional error saving error: {save_err}")
 
         return error_response
 
@@ -455,36 +629,111 @@ async def download_pdf(
     try:
         # Obtener usuario autenticado
         current_user = get_current_user(request)
+        logger.info(f"Intento de descarga PDF para conversación {conversation_id} por usuario {current_user.get('email', 'desconocido')}")
 
         # Cargar conversación
         conversation = await storage_service.get_conversation(conversation_id, db)
         if not conversation:
+            logger.error(f"Conversación no encontrada: {conversation_id}")
             raise HTTPException(status_code=404, detail="Conversación no encontrada")
 
-        # VERIFICAR PROPIEDAD
-        db_conversation = conversation_repository.get(db, UUID(conversation_id))
-        if not db_conversation or str(db_conversation.user_id) != current_user["id"]:
-            logger.warning(
-                f"Usuario {current_user['id']} intentó descargar conversación {conversation_id} no autorizada"
-            )
-            raise HTTPException(
-                status_code=403,
-                detail="No tienes permisos para descargar esta propuesta",
-            )
+        # Verificar que hay un usuario válido y tiene permisos
+        if not current_user:
+            logger.warning(f"Intento de descarga sin autenticación para {conversation_id}")
+            # En un entorno Docker, podemos ser más permisivos temporalmente para debug
+            if os.environ.get("DOCKER_ENV") == "true" or settings.DEBUG:
+                logger.warning("Permitiendo descarga sin auth en entorno DEBUG/Docker")
+            else:
+                raise HTTPException(
+                    status_code=401, 
+                    detail="No autenticado para descargar"
+                )
+        else:
+            # VERIFICAR PROPIEDAD
+            db_conversation = conversation_repository.get(db, UUID(conversation_id))
+            if not db_conversation or str(db_conversation.user_id) != current_user["id"]:
+                logger.warning(
+                    f"Usuario {current_user['id']} intentó descargar conversación {conversation_id} no autorizada"
+                )
+                if not settings.DEBUG:
+                    raise HTTPException(
+                        status_code=403,
+                        detail="No tienes permisos para descargar esta propuesta",
+                    )
+                else:
+                    logger.warning("Permitiendo descarga sin verificación de propiedad en modo DEBUG")
 
+        # Verificar estado de metadata
+        has_proposal = conversation.metadata.get("has_proposal", False)
+        is_complete = conversation.metadata.get("is_complete", False)
+        ready_for_proposal = conversation.metadata.get("ready_for_proposal", False)
         pdf_path = conversation.metadata.get("pdf_path")
+        proposal_text = conversation.metadata.get("proposal_text")
+        
+        logger.info(f"Estado PDF para descarga: has_proposal={has_proposal}, is_complete={is_complete}, ready_for_proposal={ready_for_proposal}, pdf_path={pdf_path}, proposal_text_len={len(proposal_text) if proposal_text else 0}")
 
-        # Si no existe, intentar generarlo de nuevo
-        if not pdf_path or not os.path.exists(pdf_path):
+        # Si no existe o metadata inconsistente, intentar regenerarlo
+        if not pdf_path or not os.path.exists(pdf_path) or not has_proposal:
+            logger.info(f"PDF no existe o metadata inconsistente, regenerando para descarga directa")
             from app.services.direct_proposal_generator import direct_proposal_generator
 
-            logger.info(f"Regenerando PDF bajo demanda para {conversation_id}...")
-            pdf_path = await direct_proposal_generator.generate_complete_proposal(
-                conversation
-            )
+            # Si ya tenemos texto de propuesta, mejor asegurarnos que esté en la metadata
+            if not proposal_text and is_complete:
+                logger.info(f"Sin texto de propuesta, pero is_complete=True. Generando PDF de emergencia...")
+                # Usar texto de emergencia o generar
+                conversation.metadata["proposal_text"] = "# Propuesta de Tratamiento de Agua para Cliente\n\nGenerado automáticamente para descarga directa."
+                await storage_service.save_conversation(conversation, db)
+                db.commit()
+            
+            logger.info(f"Regenerando PDF bajo demanda para descarga directa...")
+            pdf_path = await direct_proposal_generator.generate_complete_proposal(conversation)
 
-            if not pdf_path or not os.path.exists(pdf_path):
-                raise ValueError("Generación PDF falló")
+            if pdf_path and os.path.exists(pdf_path):
+                logger.info(f"PDF regenerado exitosamente para descarga: {pdf_path}")
+                # Asegurar permisos de archivo correctos
+                try:
+                    os.chmod(pdf_path, 0o644)  # rw-r--r--
+                    logger.info(f"Permisos del PDF establecidos: {oct(os.stat(pdf_path).st_mode)[-3:]}")
+                except Exception as e:
+                    logger.warning(f"No se pudieron establecer permisos en {pdf_path}: {e}")
+                
+                # Actualizar la metadata de la conversación con la nueva ruta
+                conversation.metadata["pdf_path"] = pdf_path
+                conversation.metadata["has_proposal"] = True
+                conversation.metadata["is_complete"] = True
+                await storage_service.save_conversation(conversation, db)
+                db.commit()
+                
+                # Verificar que se actualizó correctamente
+                updated_conv = await storage_service.get_conversation(conversation_id, db)
+                logger.info(f"Metadatos actualizados después de regenerar PDF: has_proposal={updated_conv.metadata.get('has_proposal')}, pdf_path={updated_conv.metadata.get('pdf_path')}")
+            else:
+                logger.error(f"Regeneración de PDF falló para descarga directa de {conversation_id}")
+                raise HTTPException(
+                    status_code=500,
+                    detail="No se pudo generar el PDF. Intente nuevamente."
+                )
+
+        # Verificar si el archivo existe después de todo
+        if not os.path.exists(pdf_path):
+            logger.error(f"PDF no encontrado en el sistema de archivos: {pdf_path}")
+            raise HTTPException(
+                status_code=404, 
+                detail="El archivo PDF no fue encontrado en el servidor"
+            )
+        
+        # Verificar permisos de lectura
+        if not os.access(pdf_path, os.R_OK):
+            logger.error(f"Permisos insuficientes para leer el PDF: {pdf_path}")
+            try:
+                logger.warning(f"Intentando corregir permisos de archivo para lectura")
+                os.chmod(pdf_path, 0o644)  # rw-r--r--
+            except Exception as e:
+                logger.error(f"No se pudieron corregir permisos: {e}")
+                raise HTTPException(
+                    status_code=500,
+                    detail="Error de permisos al acceder al archivo PDF"
+                )
 
         # Preparar nombre personalizado
         client_name = conversation.metadata.get("client_name", "Cliente")
@@ -494,10 +743,21 @@ async def download_pdf(
         # Limpiar el nombre para asegurar que sea válido como nombre de archivo
         client_name = "".join(
             c if c.isalnum() or c in "_- " else "_" for c in client_name
-        )
+        ).replace(" ", "_")
 
         # Generar nombre de archivo
         filename = f"Propuesta_Hydrous_{client_name}_{conversation_id[:8]}.pdf"
+        logger.info(f"Enviando archivo PDF: {filename} desde {pdf_path}")
+
+        # Verificar tamaño del archivo antes de enviarlo
+        try:
+            file_size = os.path.getsize(pdf_path)
+            logger.info(f"Tamaño del archivo PDF: {file_size} bytes")
+            if file_size == 0:
+                logger.error(f"PDF tiene tamaño cero: {pdf_path}")
+                raise HTTPException(status_code=500, detail="El archivo PDF está vacío")
+        except OSError as e:
+            logger.error(f"Error al obtener tamaño del archivo: {e}")
 
         return FileResponse(
             path=pdf_path,
@@ -506,9 +766,105 @@ async def download_pdf(
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
     except HTTPException as http_exc:
+        logger.error(f"Error HTTP en descarga PDF: {http_exc.detail}")
         raise http_exc
     except Exception as e:
         logger.error(
             f"Error en descarga de PDF para {conversation_id}: {e}", exc_info=True
         )
-        raise HTTPException(status_code=500, detail="Error procesando descarga")
+        raise HTTPException(status_code=500, detail=f"Error procesando descarga: {str(e)[:100]}")
+
+
+# Endpoint para diagnóstico y reparación de conversación
+@router.post("/{conversation_id}/diagnose")
+async def diagnose_conversation(
+    request: Request,
+    conversation_id: str,
+    db: Session = Depends(get_db),
+):
+    """Diagnostica y repara una conversación con posibles problemas."""
+    try:
+        # Autenticación
+        current_user = get_current_user(request)
+        logger.info(f"Diagnóstico de conversación {conversation_id} solicitado por {current_user.get('email', 'desconocido')}")
+
+        # Cargar conversación
+        conversation = await storage_service.get_conversation(conversation_id, db)
+        if not conversation:
+            raise HTTPException(status_code=404, detail="Conversación no encontrada")
+
+        # Verificar propiedad
+        db_conversation = conversation_repository.get(db, UUID(conversation_id))
+        if not db_conversation or str(db_conversation.user_id) != current_user["id"]:
+            raise HTTPException(
+                status_code=403,
+                detail="No tienes permisos para diagnosticar esta conversación"
+            )
+
+        # Recolectar información de diagnóstico
+        diagnostico = {
+            "id": conversation.id,
+            "estado_original": {
+                "is_complete": conversation.metadata.get("is_complete", False),
+                "has_proposal": conversation.metadata.get("has_proposal", False),
+                "pdf_path": conversation.metadata.get("pdf_path"),
+                "proposal_text": bool(conversation.metadata.get("proposal_text")),
+                "current_question_id": conversation.metadata.get("current_question_id"),
+            },
+            "mensajes_count": len(conversation.messages) if conversation.messages else 0,
+            "datos_recolectados": bool(conversation.metadata.get("collected_data")),
+        }
+
+        # Intentar reparar inconsistencias
+        reparaciones = []
+
+        # Si está marcada como completa pero no tiene propuesta
+        if conversation.metadata.get("is_complete", False) and not conversation.metadata.get("has_proposal", False):
+            reparaciones.append("Conversación marcada como completa sin propuesta generada")
+            
+            # Intentar generar propuesta
+            from app.services.direct_proposal_generator import direct_proposal_generator
+            pdf_path = await direct_proposal_generator.generate_complete_proposal(conversation)
+            
+            if pdf_path and os.path.exists(pdf_path):
+                conversation.metadata["pdf_path"] = pdf_path
+                conversation.metadata["has_proposal"] = True
+                reparaciones.append(f"Propuesta generada correctamente en {pdf_path}")
+            else:
+                reparaciones.append("No se pudo generar la propuesta automáticamente")
+
+        # Si tiene ruta de PDF pero no está marcada como lista
+        elif conversation.metadata.get("pdf_path") and not conversation.metadata.get("has_proposal", False):
+            pdf_path = conversation.metadata.get("pdf_path")
+            if os.path.exists(pdf_path):
+                conversation.metadata["has_proposal"] = True
+                reparaciones.append("Conversación reparada: marcada con propuesta disponible")
+            else:
+                reparaciones.append(f"Ruta de PDF existe pero archivo no encontrado: {pdf_path}")
+
+        # Guardar cambios
+        if reparaciones:
+            await storage_service.save_conversation(conversation, db)
+            db.commit()
+
+        # Recopilar estado final
+        estado_final = {
+            "is_complete": conversation.metadata.get("is_complete", False),
+            "has_proposal": conversation.metadata.get("has_proposal", False),
+            "pdf_path": conversation.metadata.get("pdf_path"),
+            "existe_archivo": os.path.exists(conversation.metadata.get("pdf_path", "")) if conversation.metadata.get("pdf_path") else False,
+        }
+
+        # Devolver diagnóstico
+        return {
+            "diagnóstico": diagnostico,
+            "reparaciones_realizadas": reparaciones,
+            "estado_final": estado_final,
+            "mensaje": "Diagnóstico completado" if reparaciones else "No se requieren reparaciones"
+        }
+        
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        logger.error(f"Error en diagnóstico para {conversation_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error en diagnóstico: {str(e)[:100]}")

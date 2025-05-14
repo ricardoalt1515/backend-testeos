@@ -344,13 +344,18 @@ class AIServiceLLMDriven:
                         proposal_clean_text = llm_response.split("[PROPOSAL_COMPLETE:")[
                             0
                         ].strip()
+                        # Guardar el texto de la propuesta en metadata
                         conversation.metadata["proposal_text"] = proposal_clean_text
-                        conversation.metadata["is_complete"] = True
-                        conversation.metadata["has_proposal"] = True
+                        # También guardar que está listo para generar PDF, pero no establecer has_proposal
+                        # hasta que realmente se genere exitosamente
+                        conversation.metadata["ready_for_proposal"] = True
+                        # Log detallado para seguimiento
                         logger.info(
-                            f"Propuesta detectada y guardada en metadata para {conversation.id}"
+                            f"Propuesta detectada para {conversation.id} - Texto: {len(proposal_clean_text)} caracteres"
                         )
-                        llm_response = "✅ ¡Propuesta Lista! Escribe 'descargar pdf' para obtener tu documento."
+                        logger.info(f"Metadatos actualizados: ready_for_proposal=True, is_complete=False, has_proposal=False")
+                        # Añadir marcador para que chat.py sepa que debe generar el PDF
+                        llm_response = "[HYDROUS_INTERNAL_MARKER:GENERATE_PROPOSAL]" + proposal_clean_text
 
                     logger.debug(
                         f"DBG_AI_HANDLE: Metadata actualizada OK para {conversation.id}."
