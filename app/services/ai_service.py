@@ -157,9 +157,12 @@ class AIServiceLLMDriven:
             subsector = current_metadata.get("selected_subsector")
             location = current_metadata.get("user_location")
             client_name = current_metadata.get("client_name")
+            is_new_conversation = current_metadata.get("is_new_conversation", False)
+            first_interaction = current_metadata.get("first_interaction", False)
 
             logger.info(
-                f"Datos de usuario en metadata: nombre={client_name}, sector={sector}, subsector{subsector}, ubicacion={location}"
+                f"Datos de usuario en metadata: nombre={client_name}, sector={sector}, subsector={subsector}, "
+                f"ubicacion={location}, nueva_conversacion={is_new_conversation}, primera_interaccion={first_interaction}"
             )
 
             # Generar prompt principal
@@ -173,8 +176,21 @@ class AIServiceLLMDriven:
             sector = current_metadata.get("selected_sector")
             subsector = current_metadata.get("selected_subsector")
             client_name = current_metadata.get("client_name")
+            company_name = current_metadata.get("company_name")
 
             context_info = []
+            
+            # Agregar instrucciones específicas para primera interacción
+            if is_new_conversation:
+                context_info.append("THIS IS A NEW CONVERSATION. DO NOT say 'welcome back' or similar phrases.")
+                if first_interaction:
+                    context_info.append("This is the user's first message in this conversation.")
+                    context_info.append("DO NOT introduce yourself again. The user has already seen your welcome message.")
+                    context_info.append("Instead, acknowledge their response and proceed with the questionnaire or conversation.")
+                    context_info.append("If they are confirming their information, thank them and continue with the first question.")
+                    
+            # Información del usuario
+            context_info.append("\nUser pre-information:")
             if user_name:
                 context_info.append(f"- Name: {user_name}")
             if user_email:
@@ -187,22 +203,32 @@ class AIServiceLLMDriven:
                 context_info.append(f"- Subsector: {subsector}")
             if client_name and client_name != "Client":
                 context_info.append(f"- Client Name: {client_name}")
+            if company_name:
+                context_info.append(f"- Company Name: {company_name}")
 
             if context_info:
-                context_info.insert(0, "User pre-information:")
                 context_info.append(
-                    "Please adapt your introduction considering this information and avoid asking for data we already know."
+                    "\nPlease adapt your responses considering this information and avoid asking for data we already know."
                 )
+                if is_new_conversation and first_interaction:
+                    context_info.append("Remember, this is a NEW conversation but NOT your first message - the user has already seen your welcome.")
                 context_message = {"role": "system", "content": "\n".join(context_info)}
                 messages.append(context_message)
-                logger.info(
-                    "Added additional user context to the prompt (always, if present)."
-                )
+                logger.info("Added additional user context and conversation state to the prompt.")
 
             # Añadir historial de conversación (si existe)
             if conversation.messages:
                 MAX_HISTORY_MSGS = 15  # Ajustar según necesidad y límites de tokens
                 start_index = max(0, len(conversation.messages) - MAX_HISTORY_MSGS)
+                
+                # Si es primera interacción, marcar el primer mensaje como ya enviado
+                if first_interaction and len(conversation.messages) > 0:
+                    welcome_msg = conversation.messages[0]
+                    if hasattr(welcome_msg, "role") and welcome_msg.role == "assistant":
+                        messages.append({"role": "assistant", "content": welcome_msg.content, "name": "welcome_message"})
+                        # Empezar desde el segundo mensaje si lo hay
+                        start_index = 1
+                
                 for msg in conversation.messages[start_index:]:
                     # Asegurarse que msg es un objeto con atributos role y content
                     # (Si viene de BD, podría ser un dict)

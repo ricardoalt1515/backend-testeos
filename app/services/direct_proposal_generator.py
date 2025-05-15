@@ -44,7 +44,7 @@ class DirectProposalGenerator:
             if not proposal_text:
                 # 3. Llamar a la API de IA con un prompt específico y directo
                 logger.info(f"Generando texto de propuesta con AI para conversación {conversation.id}")
-                proposal_text = await self._generate_proposal_with_ai(conversation_text)
+                proposal_text = await self._generate_proposal_with_ai(conversation_text, conversation.metadata)
                 logger.info(f"Texto de propuesta generado: {len(proposal_text)} caracteres")
             else:
                 logger.info(f"Usando texto de propuesta existente: {len(proposal_text)} caracteres")
@@ -146,9 +146,26 @@ class DirectProposalGenerator:
                     conversation_text += f"{role.upper()}: {content}\n\n"
         return conversation_text
 
-    async def _generate_proposal_with_ai(self, conversation_text: str) -> str:
+    async def _generate_proposal_with_ai(self, conversation_text: str, conversation_metadata: dict) -> str:
         """Genera propuesta con la IA usando un prompt muy específico."""
         from app.services.ai_service import ai_service
+        
+        # Extraer datos relevantes del cliente de los metadatos
+        client_name = conversation_metadata.get("client_name", "Cliente")
+        client_name = client_name if client_name != "Cliente" else conversation_metadata.get("user_name", "Cliente")
+        user_location = conversation_metadata.get("user_location", "No especificada")
+        company_name = conversation_metadata.get("company_name", "No especificada")
+        selected_sector = conversation_metadata.get("selected_sector", "No especificado")
+        selected_subsector = conversation_metadata.get("selected_subsector", "")
+        
+        # Combinar sector y subsector si ambos existen
+        industry = selected_sector
+        if selected_subsector and selected_subsector != "Otro":
+            industry = f"{selected_sector} - {selected_subsector}"
+        industry = industry if industry != "No especificado" else "No especificada"
+        
+        # Registrar la información que se usará
+        logger.info(f"Datos del cliente para la propuesta: Nombre={client_name}, Ubicación={user_location}, Empresa={company_name}, Sector={industry}")
 
         prompt = f"""
 # GENERA UNA PROPUESTA PROFESIONAL DE TRATAMIENTO DE AGUA SIGUIENDO EXACTAMENTE ESTE FORMATO
@@ -161,6 +178,13 @@ Basándote en la conversación:
 2. NUNCA uses marcadores de posición como "$X,XXX" - INVENTA cifras realistas específicas.
 3. Genera tablas SIMPLES de máximo 3-4 columnas para evitar problemas de formato.
 4. CALCULA valores reales para toda información financiera, especialmente ROI y ahorros.
+5. UTILIZA EXACTAMENTE los datos del cliente proporcionados a continuación en la sección "Project Background".
+
+## DATOS DEL CLIENTE A INCLUIR OBLIGATORIAMENTE:
+- Nombre del cliente: {client_name}
+- Ubicación: {user_location}
+- Empresa: {company_name}
+- Sector/Industria: {industry}
 
 ## FORMATO EXACTO A SEGUIR:
 
@@ -175,9 +199,10 @@ Basándote en la conversación:
 **2. Project Background**
 | **Client Information** | **Details** |
 | ------------------ | --------------- |
-| **Client Name** | [Nombre específico] |
-| **Location** | [Ubicación] |
-| **Industry** | [Sector] |
+| **Client Name** | {client_name} |
+| **Location** | {user_location} |
+| **Company** | {company_name} |
+| **Industry** | {industry} |
 | **Water Source** | [Fuente] |
 | **Current Water Consumption** | [X m³/día] |
 | **Current Wastewater Generation** | [Y m³/día] |

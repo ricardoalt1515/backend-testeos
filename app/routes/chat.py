@@ -145,67 +145,98 @@ async def start_conversation(
         # Obtener usuario autenticado del middleware
         current_user = get_current_user(request)
 
-        # Crear conversación
-        conversation = await storage_service.create_conversation(db)
-        logger.info(
-            f"Nueva conversacion iniciada (ID: {conversation.id}) por usuario: {current_user['id']}"
+        # Extraer y formatear datos del usuario
+        client_name = f"{current_user.get('first_name', '')} {current_user.get('last_name', '')}".strip()
+        user_location = current_user.get("location")
+        selected_sector = current_user.get("sector")
+        selected_subsector = current_user.get("subsector")
+        company_name = current_user.get("company_name")
+        
+        # Crear metadatos iniciales con información del usuario
+        initial_metadata = {
+            "client_name": client_name,
+            "user_name": client_name,  # Duplicar para compatibilidad con el prompt
+            "user_location": user_location,
+            "selected_sector": selected_sector,
+            "selected_subsector": selected_subsector,
+            "company_name": company_name,
+            "user_email": current_user.get("email"),
+            "is_new_conversation": True,  # Indicador de nueva conversación
+            "first_interaction": True,    # Para mensaje inicial personalizado
+        }
+
+        # Crear conversación en base de datos
+        new_conversation = conversation_repository.create_with_metadata(
+            db,
+            obj_in={
+                "user_id": UUID(current_user["id"]),
+                "selected_sector": selected_sector,
+                "selected_subsector": selected_subsector,
+                "client_name": client_name,
+            },
+            metadata=initial_metadata
         )
+        
+        if not new_conversation:
+            raise HTTPException(status_code=500, detail="Error al crear conversación")
 
-        # AUTOMÁTICAMENTE asociar con usuario autenticado
-        db_conversation = conversation_repository.get(db, UUID(conversation.id))
-        if db_conversation:
-            # Siempre asociamos con el usuario autenticado
-            db_conversation.user_id = UUID(current_user["id"])
-            db.commit()
-            logger.info(
-                f"Conversación {conversation.id} asociada al usuario {current_user['id']}"
-            )
+        # Crear objeto Conversation para la respuesta
+        conversation = Conversation(
+            id=str(new_conversation.id),
+            created_at=new_conversation.created_at,
+            user_id=str(new_conversation.user_id),
+            messages=[],
+            metadata=initial_metadata
+        )
+        
+        # Construir mensaje de bienvenida personalizado con información del usuario
+        welcome_parts = [
+            "¡Hola! Soy H₂O Allegiant, tu asistente especializado en ingeniería de tratamiento de aguas.\n\n"
+        ]
+        
+        # Añadir información del usuario que tenemos
+        if client_name:
+            welcome_parts.append(f"Bienvenido/a {client_name}. ")
+            
+        # Lista para recopilar los datos que ya tenemos
+        user_data_parts = []
+        if company_name:
+            user_data_parts.append(f"tu empresa es {company_name}")
+        if user_location:
+            user_data_parts.append(f"estás ubicado/a en {user_location}")
+        if selected_sector:
+            sector_part = f"estás en el sector {selected_sector}"
+            if selected_subsector:
+                sector_part += f", específicamente en {selected_subsector}"
+            user_data_parts.append(sector_part)
+            
+        # Añadir resumen de datos del usuario si tenemos alguno
+        if user_data_parts:
+            welcome_parts.append("Según la información que tengo, ")
+            if len(user_data_parts) == 1:
+                welcome_parts.append(f"{user_data_parts[0]}. ")
+            elif len(user_data_parts) == 2:
+                welcome_parts.append(f"{user_data_parts[0]} y {user_data_parts[1]}. ")
+            else:
+                welcome_parts.append(", ".join(user_data_parts[:-1]) + f" y {user_data_parts[-1]}. ")
+            welcome_parts.append("¿Es correcta esta información? ")
+        
+        # Finalizar el mensaje
+        welcome_parts.append("¿En qué puedo ayudarte hoy?")
+        
+        # Crear mensaje de bienvenida
+        welcome_message = Message.assistant("".join(welcome_parts))
+        conversation.add_message(welcome_message)
 
-            # IMPORTANTE: copiar TODOS los datos del usuario a metadata
-            conversation.metadata["user_id"] = current_user["id"]
-            conversation.metadata["user_email"] = current_user.get("email")
-            conversation.metadata["user_name"] = (
-                f"{current_user.get('first_name', '')} {current_user.get('last_name', '')}"
-            )
-
-            # AÑADIR ESTOS CAMPOS CRÍTICOS:
-            conversation.metadata["user_location"] = current_user.get("location")
-            conversation.metadata["selected_sector"] = current_user.get("sector")
-            conversation.metadata["selected_subsector"] = current_user.get("subsector")
-            conversation.metadata["company_name"] = current_user.get("company_name")
-
-            logger.info(
-                f"Datos completos del usuario transferidos a metadata: {conversation.metadata}"
-            )
-
-        # Aplicar contexto personalizado si existe (para sobreescribir si es necesario)
-        if request_data and request_data.customContext:
-            context = request_data.customContext
-
-            # Estos valores del contexto personalizado pueden sobreescribir
-            if "client_name" in context:
-                conversation.metadata["client_name"] = context["client_name"]
-            if "selected_sector" in context:
-                conversation.metadata["selected_sector"] = context["selected_sector"]
-            if "selected_subsector" in context:
-                conversation.metadata["selected_subsector"] = context[
-                    "selected_subsector"
-                ]
-            if "user_location" in context:
-                conversation.metadata["user_location"] = context["user_location"]
-
-            logger.info(
-                f"Contexto actualizado para conversación: {conversation.metadata}"
-            )
-
-        # Guardar cambios
+        # Guardar conversación con mensaje inicial
         await storage_service.save_conversation(conversation, db)
 
+        # Retornar datos de la conversación
         return ConversationResponse(
             id=conversation.id,
             created_at=conversation.created_at,
-            messages=[],
-            metadata=conversation.metadata,
+            messages=conversation.messages,
+            metadata=conversation.metadata
         )
 
     except HTTPException as he:
@@ -225,10 +256,32 @@ async def send_message(
     db: Session = Depends(get_db),
 ):
     """Process user message."""
-    conversation_id = (
-        data.conversation_id if hasattr(data, "conversation_id") else "unknown"
-    )
+    # Extraer datos del mensaje
+    conversation_id = data.conversation_id if hasattr(data, "conversation_id") else "unknown"
     user_input = data.message if hasattr(data, "message") else ""
+    
+    # Verificar si es un mensaje de verificación silenciosa (para cargar mensajes)
+    is_verification_message = user_input == "VERIFICACIÓN_SILENCIOSA"
+    
+    if is_verification_message:
+        # Cargar conversación
+        conversation = await storage_service.get_conversation(conversation_id, db)
+        if not conversation:
+            logger.error(f"Conversation not found: {conversation_id}")
+            return {
+                "id": "error-conv-not-found",
+                "message": "Error: Conversation not found. Please restart.",
+                "conversation_id": conversation_id,
+                "created_at": datetime.utcnow(),
+            }
+        
+        # Retornar mensajes actuales sin procesar el mensaje de verificación
+        return {
+            "id": conversation.id,
+            "messages": conversation.messages,
+            "conversation_id": conversation_id,
+            "created_at": conversation.created_at,
+        }
     assistant_response_data = None
 
     try:
@@ -387,7 +440,14 @@ async def send_message(
             await storage_service.add_message_to_conversation(
                 conversation_id, user_message_obj, db
             )
-
+            
+            # Verificar si es la primera interacción y actualizar metadata
+            if conversation.metadata.get("first_interaction", False):
+                logger.info(f"Primera interacción detectada para conversación {conversation_id}. Actualizando metadata.")
+                conversation.metadata["first_interaction"] = False
+                # Mantenemos is_new_conversation=True para que el asistente sepa que 
+                # sigue siendo una conversación nueva aunque ya no sea la primera interacción
+            
             # Save user response immediately
             current_question_id = conversation.metadata.get("current_question_id")
 
