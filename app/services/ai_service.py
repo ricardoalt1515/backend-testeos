@@ -153,16 +153,30 @@ class AIServiceLLMDriven:
             current_metadata = conversation.metadata if conversation.metadata else {}
 
             # Verificar si tenemos datos del sector/subsector
-            sector = current_metadata.get("selected_sector")
-            subsector = current_metadata.get("selected_subsector")
-            location = current_metadata.get("user_location")
-            client_name = current_metadata.get("client_name")
+            # Asegurándonos de buscar en todas las variantes posibles de nombres de campos
+            sector = current_metadata.get("selected_sector") or current_metadata.get("sector")
+            subsector = current_metadata.get("selected_subsector") or current_metadata.get("subsector")
+            location = current_metadata.get("user_location") or current_metadata.get("location")
+            client_name = current_metadata.get("client_name") or current_metadata.get("user_name")
+            company_name = current_metadata.get("company_name")
             is_new_conversation = current_metadata.get("is_new_conversation", False)
             first_interaction = current_metadata.get("first_interaction", False)
-
+            
+            # Actualizar estos valores en la metadata para asegurar consistencia
+            if sector:
+                current_metadata["selected_sector"] = sector
+            if subsector:
+                current_metadata["selected_subsector"] = subsector
+            if location:
+                current_metadata["user_location"] = location
+            if client_name:
+                current_metadata["user_name"] = client_name
+                current_metadata["client_name"] = client_name
+            
             logger.info(
-                f"Datos de usuario en metadata: nombre={client_name}, sector={sector}, subsector={subsector}, "
-                f"ubicacion={location}, nueva_conversacion={is_new_conversation}, primera_interaccion={first_interaction}"
+                f"Datos de usuario procesados: nombre={client_name}, empresa={company_name}, "
+                f"sector={sector}, subsector={subsector}, ubicacion={location}, "
+                f"nueva_conversacion={is_new_conversation}, primera_interaccion={first_interaction}"
             )
 
             # Generar prompt principal
