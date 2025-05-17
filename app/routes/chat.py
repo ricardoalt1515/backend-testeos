@@ -152,18 +152,31 @@ async def start_conversation(
         selected_subsector = current_user.get("subsector")
         company_name = current_user.get("company_name")
         
+        # Log de depuración para verificar datos del usuario
+        logger.info(
+            f"Datos del usuario al iniciar conversación: "
+            f"nombre={client_name}, empresa={company_name}, "
+            f"sector={selected_sector}, subsector={selected_subsector}, "
+            f"ubicación={user_location}, email={current_user.get('email')}"
+        )
+        
         # Crear metadatos iniciales con información del usuario
         initial_metadata = {
             "client_name": client_name,
             "user_name": client_name,  # Duplicar para compatibilidad con el prompt
             "user_location": user_location,
-            "selected_sector": selected_sector,
-            "selected_subsector": selected_subsector,
+            "selected_sector": selected_sector if selected_sector else None,
+            "selected_subsector": selected_subsector if selected_subsector else None,
+            "sector": selected_sector if selected_sector else None,  # Alias para compatibilidad
+            "subsector": selected_subsector if selected_subsector else None,  # Alias para compatibilidad
             "company_name": company_name,
             "user_email": current_user.get("email"),
             "is_new_conversation": True,  # Indicador de nueva conversación
             "first_interaction": True,    # Para mensaje inicial personalizado
         }
+        
+        # Log de depuración para verificar metadata
+        logger.info(f"Metadata inicial de la conversación: {initial_metadata}")
 
         # Crear conversación en base de datos
         new_conversation = conversation_repository.create_with_metadata(

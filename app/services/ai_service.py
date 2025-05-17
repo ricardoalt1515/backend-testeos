@@ -162,13 +162,24 @@ class AIServiceLLMDriven:
             is_new_conversation = current_metadata.get("is_new_conversation", False)
             first_interaction = current_metadata.get("first_interaction", False)
             
+            # Log de depuración de la metadata recibida
+            logger.info(
+                f"Metadata recibida en _prepare_messages: "
+                f"sector={sector}, subsector={subsector}, "
+                f"location={location}, client_name={client_name}, "
+                f"company_name={company_name}, is_new_conversation={is_new_conversation}"
+            )
+            
             # Actualizar estos valores en la metadata para asegurar consistencia
             if sector:
                 current_metadata["selected_sector"] = sector
+                current_metadata["sector"] = sector  # Mantener ambos formatos
             if subsector:
                 current_metadata["selected_subsector"] = subsector
+                current_metadata["subsector"] = subsector  # Mantener ambos formatos
             if location:
                 current_metadata["user_location"] = location
+                current_metadata["location"] = location  # Mantener ambos formatos
             if client_name:
                 current_metadata["user_name"] = client_name
                 current_metadata["client_name"] = client_name
