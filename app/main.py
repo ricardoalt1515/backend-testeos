@@ -1,22 +1,24 @@
 # app/main.py
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
-import logging
 
 from app.routes import chat, documents, feedback, auth
 from app.config import settings
 
-# Importar middlewares (asegúrate de que los archivos existen)
+# Importar middlewares
 from app.middleware.auth_middleware import AuthMiddleware
 from app.middleware.rate_limit_middleware import RateLimitMiddleware
 
 # Configuración de logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
-logger = logging.getLogger("hydrous")
+from app.core.logging_config import get_logger
+
+# Configurar logging
+logger = get_logger("hydrous")
+
+# Asegurarse de que el directorio de uploads existe
+os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
 
 # Inicializar aplicación
 app = FastAPI(

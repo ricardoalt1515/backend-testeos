@@ -12,13 +12,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Instalar dependencias de Python
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt gunicorn==21.2.0
 
-# Crear directorio para uploads
-RUN mkdir -p /app/uploads
+# Crear directorio para uploads y logs
+RUN mkdir -p /app/uploads /app/logs
 
-# Copiar aplicación
+# Copiar aplicación y configuración de Gunicorn
 COPY . .
+COPY gunicorn_config.py .
 
 # Script para esperar a que los servicios estén disponibles
 COPY ./scripts/wait-for-services.sh /wait-for-services.sh
@@ -27,5 +28,5 @@ RUN chmod +x /wait-for-services.sh
 # Puerto para la API
 EXPOSE 8000
 
-# Comando por defecto
-CMD ["/wait-for-services.sh", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Comando para producción con Gunicorn + Uvicorn
+CMD ["/wait-for-services.sh", "gunicorn", "app.main:app", "-c", "gunicorn_config.py"]

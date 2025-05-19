@@ -72,6 +72,10 @@ class Settings(BaseSettings):
     JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "temporalsecretkey123456789")
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24 horas
+    
+    # Logging
+    LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO").upper()
+    LOG_FILE: str = os.getenv("LOG_FILE", "logs/app.log")
 
 
 # Crear instancia de configuración
@@ -79,3 +83,5 @@ settings = Settings()
 
 # Asegurar que exista el directorio de uploads
 os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
+# Asegurar que exista el directorio de logs
+os.makedirs(os.path.dirname(settings.LOG_FILE), exist_ok=True)
