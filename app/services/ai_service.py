@@ -154,14 +154,22 @@ class AIServiceLLMDriven:
 
             # Verificar si tenemos datos del sector/subsector
             # Asegurándonos de buscar en todas las variantes posibles de nombres de campos
-            sector = current_metadata.get("selected_sector") or current_metadata.get("sector")
-            subsector = current_metadata.get("selected_subsector") or current_metadata.get("subsector")
-            location = current_metadata.get("user_location") or current_metadata.get("location")
-            client_name = current_metadata.get("client_name") or current_metadata.get("user_name")
+            sector = current_metadata.get("selected_sector") or current_metadata.get(
+                "sector"
+            )
+            subsector = current_metadata.get(
+                "selected_subsector"
+            ) or current_metadata.get("subsector")
+            location = current_metadata.get("user_location") or current_metadata.get(
+                "location"
+            )
+            client_name = current_metadata.get("client_name") or current_metadata.get(
+                "user_name"
+            )
             company_name = current_metadata.get("company_name")
             is_new_conversation = current_metadata.get("is_new_conversation", False)
             first_interaction = current_metadata.get("first_interaction", False)
-            
+
             # Log de depuración de la metadata recibida
             logger.info(
                 f"Metadata recibida en _prepare_messages: "
@@ -169,7 +177,7 @@ class AIServiceLLMDriven:
                 f"location={location}, client_name={client_name}, "
                 f"company_name={company_name}, is_new_conversation={is_new_conversation}"
             )
-            
+
             # Actualizar estos valores en la metadata para asegurar consistencia
             if sector:
                 current_metadata["selected_sector"] = sector
@@ -183,7 +191,7 @@ class AIServiceLLMDriven:
             if client_name:
                 current_metadata["user_name"] = client_name
                 current_metadata["client_name"] = client_name
-            
+
             logger.info(
                 f"Datos de usuario procesados: nombre={client_name}, empresa={company_name}, "
                 f"sector={sector}, subsector={subsector}, ubicacion={location}, "
@@ -204,16 +212,26 @@ class AIServiceLLMDriven:
             company_name = current_metadata.get("company_name")
 
             context_info = []
-            
+
             # Agregar instrucciones específicas para primera interacción
             if is_new_conversation:
-                context_info.append("THIS IS A NEW CONVERSATION. DO NOT say 'welcome back' or similar phrases.")
+                context_info.append(
+                    "THIS IS A NEW CONVERSATION. DO NOT say 'welcome back' or similar phrases."
+                )
                 if first_interaction:
-                    context_info.append("This is the user's first message in this conversation.")
-                    context_info.append("DO NOT introduce yourself again. The user has already seen your welcome message.")
-                    context_info.append("Instead, acknowledge their response and proceed with the questionnaire or conversation.")
-                    context_info.append("If they are confirming their information, thank them and continue with the first question.")
-                    
+                    context_info.append(
+                        "This is the user's first message in this conversation."
+                    )
+                    context_info.append(
+                        "DO NOT introduce yourself again. The user has already seen your welcome message."
+                    )
+                    context_info.append(
+                        "Instead, acknowledge their response and proceed with the questionnaire or conversation."
+                    )
+                    context_info.append(
+                        "If they are confirming their information, thank them and continue with the first question."
+                    )
+
             # Información del usuario
             context_info.append("\nUser pre-information:")
             if user_name:
@@ -236,24 +254,34 @@ class AIServiceLLMDriven:
                     "\nPlease adapt your responses considering this information and avoid asking for data we already know."
                 )
                 if is_new_conversation and first_interaction:
-                    context_info.append("Remember, this is a NEW conversation but NOT your first message - the user has already seen your welcome.")
+                    context_info.append(
+                        "Remember, this is a NEW conversation but NOT your first message - the user has already seen your welcome."
+                    )
                 context_message = {"role": "system", "content": "\n".join(context_info)}
                 messages.append(context_message)
-                logger.info("Added additional user context and conversation state to the prompt.")
+                logger.info(
+                    "Added additional user context and conversation state to the prompt."
+                )
 
             # Añadir historial de conversación (si existe)
             if conversation.messages:
                 MAX_HISTORY_MSGS = 15  # Ajustar según necesidad y límites de tokens
                 start_index = max(0, len(conversation.messages) - MAX_HISTORY_MSGS)
-                
+
                 # Si es primera interacción, marcar el primer mensaje como ya enviado
                 if first_interaction and len(conversation.messages) > 0:
                     welcome_msg = conversation.messages[0]
                     if hasattr(welcome_msg, "role") and welcome_msg.role == "assistant":
-                        messages.append({"role": "assistant", "content": welcome_msg.content, "name": "welcome_message"})
+                        messages.append(
+                            {
+                                "role": "assistant",
+                                "content": welcome_msg.content,
+                                "name": "welcome_message",
+                            }
+                        )
                         # Empezar desde el segundo mensaje si lo hay
                         start_index = 1
-                
+
                 for msg in conversation.messages[start_index:]:
                     # Asegurarse que msg es un objeto con atributos role y content
                     # (Si viene de BD, podría ser un dict)
@@ -404,9 +432,14 @@ class AIServiceLLMDriven:
                         logger.info(
                             f"Propuesta detectada para {conversation.id} - Texto: {len(proposal_clean_text)} caracteres"
                         )
-                        logger.info(f"Metadatos actualizados: ready_for_proposal=True, is_complete=False, has_proposal=False")
+                        logger.info(
+                            f"Metadatos actualizados: ready_for_proposal=True, is_complete=False, has_proposal=False"
+                        )
                         # Añadir marcador para que chat.py sepa que debe generar el PDF
-                        llm_response = "[HYDROUS_INTERNAL_MARKER:GENERATE_PROPOSAL]" + proposal_clean_text
+                        llm_response = (
+                            "[HYDROUS_INTERNAL_MARKER:GENERATE_PROPOSAL]"
+                            + proposal_clean_text
+                        )
 
                     logger.debug(
                         f"DBG_AI_HANDLE: Metadata actualizada OK para {conversation.id}."

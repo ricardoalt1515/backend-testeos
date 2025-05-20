@@ -1,0 +1,14 @@
+# Variables de entorno para producción
+DEBUG=False
+POSTGRES_USER=hydrous
+POSTGRES_PASSWORD=hydrous_password
+POSTGRES_SERVER=hydrous-db.xxxxxxxx.us-east-1.rds.amazonaws.com
+POSTGRES_PORT=5432
+POSTGRES_DB=hydrous_db
+REDIS_URL=redis://:redis_password@hydrous-redis.xxxxxx.0001.use1.cache.amazonaws.com:6379/0
+BACKEND_URL=https://api.tudominio.com
+JWT_SECRET_KEY=cambia_esto_por_una_clave_segura
+MODEL=gpt-4o-mini
+# Añade tus claves de API aquí
+# OPENAI_API_KEY=tu_clave_api
+# GROQ_API_KEY=tu_clave_api

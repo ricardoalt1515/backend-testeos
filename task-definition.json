@@ -1,0 +1,49 @@
+{
+  "family": "hydrous-backend-task",
+  "networkMode": "awsvpc",
+  "executionRoleArn": "arn:aws:iam::882816896907:role/ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::882816896907:role/ecsTaskExecutionRole",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "256",
+  "memory": "512",
+  "containerDefinitions": [
+    {
+      "name": "hydrous-backend",
+      "image": "882816896907.dkr.ecr.us-east-1.amazonaws.com/hydrous-backend:latest",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 8000,
+          "hostPort": 8000,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        {"name": "DEBUG", "value": "False"},
+        {"name": "POSTGRES_USER", "value": "hydrous"},
+        {"name": "POSTGRES_PASSWORD", "value": "hydrous_password"},
+        {"name": "POSTGRES_SERVER", "value": "hydrous-db.xxxxxxxx.us-east-1.rds.amazonaws.com"},
+        {"name": "POSTGRES_PORT", "value": "5432"},
+        {"name": "POSTGRES_DB", "value": "hydrous_db"},
+        {"name": "REDIS_URL", "value": "redis://:redis_password@hydrous-redis.xxxxxx.0001.use1.cache.amazonaws.com:6379/0"},
+        {"name": "JWT_SECRET_KEY", "value": "temporalsecretkey123456789"},
+        {"name": "MODEL", "value": "gpt-4o-mini"}
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/hydrous-backend",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "ecs"
+        }
+      },
+      "healthCheck": {
+        "command": ["CMD-SHELL", "curl -f http://localhost:8000/api/health || exit 1"],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 60
+      }
+    }
+  ]
+}
