@@ -35,7 +35,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
     expose_headers=["Content-Disposition"],
-    allow_origin_regex=r"https://.*\.hostingersite\.com$|https://ricardoalt1515\.github\.io$|http://localhost:.*$",
+    allow_origin_regex=r"https://.*\.hostingersite\.com$|https://ricardoalt1515\.github\.io$|http://localhost:.*$|https://(www\.)?h2oassistant\.com$",
 )
 
 # Middleware de autenticación
