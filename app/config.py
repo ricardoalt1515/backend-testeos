@@ -21,8 +21,8 @@ class Settings(BaseSettings):
     CORS_ORIGINS: List[str] = [
         "https://ricardoalt1515.github.io",
         "http://localhost:3000",  # Para desarrollo local
-        "https://plum-toad-492004.hostingersite.com",
         "https://h2oassistant.com",
+        "https://www.h2oassistant.com",  
         "*" if os.getenv("DEBUG", "False").lower() in ("true", "1", "t") else "",
     ]
 

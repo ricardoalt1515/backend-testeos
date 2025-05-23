@@ -22,10 +22,10 @@
         {"name": "DEBUG", "value": "False"},
         {"name": "POSTGRES_USER", "value": "hydrous"},
         {"name": "POSTGRES_PASSWORD", "value": "hydrous_password"},
-        {"name": "POSTGRES_SERVER", "value": "hydrous-db.xxxxxxxx.us-east-1.rds.amazonaws.com"},
+        {"name": "POSTGRES_SERVER", "value": "hydrous-db.cuj8q6augwwx.us-east-1.rds.amazonaws.com"},
         {"name": "POSTGRES_PORT", "value": "5432"},
         {"name": "POSTGRES_DB", "value": "hydrous_db"},
-        {"name": "REDIS_URL", "value": "redis://:redis_password@hydrous-redis.xxxxxx.0001.use1.cache.amazonaws.com:6379/0"},
+        {"name": "REDIS_URL", "value": "redis://:redis_password@hydrous-redis.1ywfpj.0001.use1.cache.amazonaws.com:6379/0"},
         {"name": "JWT_SECRET_KEY", "value": "temporalsecretkey123456789"},
         {"name": "MODEL", "value": "gpt-4o-mini"}
       ],
