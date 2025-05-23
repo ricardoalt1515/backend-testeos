@@ -3651,3 +3651,140 @@ WHERE conversation_metadata.conversation_id = %(conversation_id_1)s::UUID AND co
 2025-05-19 16:05:16 - sqlalchemy.engine.Engine - INFO - [cached since 21.6s ago] {'conversation_id_1': UUID('4437c3c4-d6be-466e-a2be-42265c96fc24'), 'key_1': 'first_interaction', 'param_1': 1}
 2025-05-19 16:05:16 - sqlalchemy.engine.Engine - INFO - COMMIT
 2025-05-19 16:05:16 - hydrous - INFO - DBG_SS: Conversación 4437c3c4-d6be-466e-a2be-42265c96fc24 actualizada en base de datos.
+2025-05-23 14:28:42 - root - INFO - Configuración de logging inicializada
+2025-05-23 09:04:36 - root - INFO - Configuración de logging inicializada
+2025-05-23 09:05:46 - hydrous - ERROR - Error verificando blacklist: Not enough segments
+2025-05-23 09:05:46 - hydrous - WARNING - Token intentado pero esta en blacklist
+2025-05-23 09:06:06 - hydrous - ERROR - Error en get_by_email: (psycopg2.OperationalError) connection to server at "localhost" (::1), port 5432 failed: Connection refused
+	Is the server running on that host and accepting TCP/IP connections?
+connection to server at "localhost" (127.0.0.1), port 5432 failed: Connection refused
+	Is the server running on that host and accepting TCP/IP connections?
+
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+2025-05-23 09:06:06 - hydrous - WARNING - Intento de login con email no encontrado: ricardo20@gmail.com
+2025-05-23 09:06:14 - root - INFO - Configuración de logging inicializada
+2025-05-23 16:49:54 - root - INFO - Configuración de logging inicializada
+2025-05-23 16:50:20 - sqlalchemy.engine.Engine - INFO - select pg_catalog.version()
+2025-05-23 16:50:20 - sqlalchemy.engine.Engine - INFO - [raw sql] {}
+2025-05-23 16:50:20 - sqlalchemy.engine.Engine - INFO - select current_schema()
+2025-05-23 16:50:20 - sqlalchemy.engine.Engine - INFO - [raw sql] {}
+2025-05-23 16:50:20 - sqlalchemy.engine.Engine - INFO - show standard_conforming_strings
+2025-05-23 16:50:20 - sqlalchemy.engine.Engine - INFO - [raw sql] {}
+2025-05-23 16:50:20 - sqlalchemy.engine.Engine - INFO - BEGIN (implicit)
+2025-05-23 16:50:20 - sqlalchemy.engine.Engine - INFO - SELECT users.email AS users_email, users.password_hash AS users_password_hash, users.first_name AS users_first_name, users.last_name AS users_last_name, users.company_name AS users_company_name, users.location AS users_location, users.sector AS users_sector, users.subsector AS users_subsector, users.is_active AS users_is_active, users.id AS users_id, users.created_at AS users_created_at 
+FROM users 
+WHERE users.email = %(email_1)s 
+ LIMIT %(param_1)s
+2025-05-23 16:50:20 - sqlalchemy.engine.Engine - INFO - [generated in 0.00030s] {'email_1': 'ricardo20@gmail.com', 'param_1': 1}
+2025-05-23 16:50:20 - passlib.handlers.bcrypt - WARNING - (trapped) error reading bcrypt version
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.11/site-packages/passlib/handlers/bcrypt.py", line 620, in _load_backend_mixin
+    version = _bcrypt.__about__.__version__
+              ^^^^^^^^^^^^^^^^^
+AttributeError: module 'bcrypt' has no attribute '__about__'
+2025-05-23 16:50:21 - hydrous - WARNING - Intento de login con contraseña incorrecta: ricardo20@gmail.com
+2025-05-23 16:50:21 - sqlalchemy.engine.Engine - INFO - ROLLBACK
+2025-05-23 16:50:33 - sqlalchemy.engine.Engine - INFO - BEGIN (implicit)
+2025-05-23 16:50:33 - sqlalchemy.engine.Engine - INFO - SELECT users.email AS users_email, users.password_hash AS users_password_hash, users.first_name AS users_first_name, users.last_name AS users_last_name, users.company_name AS users_company_name, users.location AS users_location, users.sector AS users_sector, users.subsector AS users_subsector, users.is_active AS users_is_active, users.id AS users_id, users.created_at AS users_created_at 
+FROM users 
+WHERE users.email = %(email_1)s 
+ LIMIT %(param_1)s
+2025-05-23 16:50:33 - sqlalchemy.engine.Engine - INFO - [cached since 12.2s ago] {'email_1': 'hydrous20@gmail.com', 'param_1': 1}
+2025-05-23 16:50:33 - sqlalchemy.engine.Engine - INFO - ROLLBACK
+2025-05-23 16:50:38 - sqlalchemy.engine.Engine - INFO - BEGIN (implicit)
+2025-05-23 16:50:38 - sqlalchemy.engine.Engine - INFO - SELECT users.email AS users_email, users.password_hash AS users_password_hash, users.first_name AS users_first_name, users.last_name AS users_last_name, users.company_name AS users_company_name, users.location AS users_location, users.sector AS users_sector, users.subsector AS users_subsector, users.is_active AS users_is_active, users.id AS users_id, users.created_at AS users_created_at 
+FROM users 
+WHERE users.id = %(id_1)s::UUID 
+ LIMIT %(param_1)s
+2025-05-23 16:50:38 - sqlalchemy.engine.Engine - INFO - [generated in 0.00340s] {'id_1': UUID('0a2d81c2-a9ae-4009-bd02-749bd4e44967'), 'param_1': 1}
+2025-05-23 16:50:38 - sqlalchemy.engine.Engine - INFO - ROLLBACK
+2025-05-23 16:50:38 - hydrous - INFO - Datos del usuario al iniciar conversación: nombre=Ricardo Altamirano, empresa=hydrous, sector=commercial, subsector=Hotel, ubicación=los mochis, email=hydrous20@gmail.com
+2025-05-23 16:50:38 - hydrous - INFO - Metadata inicial de la conversación: {'client_name': 'Ricardo Altamirano', 'user_name': 'Ricardo Altamirano', 'user_location': 'los mochis', 'selected_sector': 'commercial', 'selected_subsector': 'Hotel', 'sector': 'commercial', 'subsector': 'Hotel', 'company_name': 'hydrous', 'user_email': 'hydrous20@gmail.com', 'is_new_conversation': True, 'first_interaction': True}
+2025-05-23 16:50:38 - sqlalchemy.engine.Engine - INFO - BEGIN (implicit)
+2025-05-23 16:50:38 - sqlalchemy.engine.Engine - INFO - INSERT INTO conversations (user_id, selected_sector, selected_subsector, current_question_id, is_complete, has_proposal, client_name, proposal_text, pdf_path, id, created_at) VALUES (%(user_id)s::UUID, %(selected_sector)s, %(selected_subsector)s, %(current_question_id)s, %(is_complete)s, %(has_proposal)s, %(client_name)s, %(proposal_text)s, %(pdf_path)s, %(id)s::UUID, %(created_at)s)
+2025-05-23 16:50:38 - sqlalchemy.engine.Engine - INFO - [generated in 0.00092s] {'user_id': UUID('0a2d81c2-a9ae-4009-bd02-749bd4e44967'), 'selected_sector': 'commercial', 'selected_subsector': 'Hotel', 'current_question_id': None, 'is_complete': False, 'has_proposal': False, 'client_name': 'Ricardo Altamirano', 'proposal_text': None, 'pdf_path': None, 'id': UUID('5b29b89f-7986-466d-baa1-734a75e3bc55'), 'created_at': datetime.datetime(2025, 5, 23, 16, 50, 38, 346397)}
+2025-05-23 16:50:38 - sqlalchemy.engine.Engine - INFO - INSERT INTO conversation_metadata (conversation_id, key, value, id, created_at) VALUES (%(conversation_id__0)s::UUID, %(key__0)s, %(value__0)s::JSONB, %(id__0)s::UUID, %(created_at__0)s), (%(conversation_id__1)s::UUID, %(key__1)s, %(value__1)s::JSONB ... 543 characters truncated ...  (%(conversation_id__7)s::UUID, %(key__7)s, %(value__7)s::JSONB, %(id__7)s::UUID, %(created_at__7)s)
+2025-05-23 16:50:38 - sqlalchemy.engine.Engine - INFO - [generated in 0.00026s (insertmanyvalues) 1/1 (unordered)] {'created_at__0': datetime.datetime(2025, 5, 23, 16, 50, 38, 372486), 'conversation_id__0': UUID('5b29b89f-7986-466d-baa1-734a75e3bc55'), 'key__0': 'user_name', 'value__0': '"Ricardo Altamirano"', 'id__0': UUID('eaf0f563-02c9-400e-b341-e2982af600ee'), 'created_at__1': datetime.datetime(2025, 5, 23, 16, 50, 38, 372490), 'conversation_id__1': UUID('5b29b89f-7986-466d-baa1-734a75e3bc55'), 'key__1': 'user_location', 'value__1': '"los mochis"', 'id__1': UUID('c18108a3-6fb6-405b-8334-a23cb5aeccb8'), 'created_at__2': datetime.datetime(2025, 5, 23, 16, 50, 38, 372491), 'conversation_id__2': UUID('5b29b89f-7986-466d-baa1-734a75e3bc55'), 'key__2': 'sector', 'value__2': '"commercial"', 'id__2': UUID('61bd1048-4db9-4276-aba9-ad6428717f03'), 'created_at__3': datetime.datetime(2025, 5, 23, 16, 50, 38, 372493), 'conversation_id__3': UUID('5b29b89f-7986-466d-baa1-734a75e3bc55'), 'key__3': 'subsector', 'value__3': '"Hotel"', 'id__3': UUID('06ccc793-524e-4e6a-8c4c-6ad9f13ecce3'), 'created_at__4': datetime.datetime(2025, 5, 23, 16, 50, 38, 372494), 'conversation_id__4': UUID('5b29b89f-7986-466d-baa1-734a75e3bc55'), 'key__4': 'company_name', 'value__4': '"hydrous"', 'id__4': UUID('83389dd2-727d-4eed-aa8a-7a3de139ff07'), 'created_at__5': datetime.datetime(2025, 5, 23, 16, 50, 38, 372496), 'conversation_id__5': UUID('5b29b89f-7986-466d-baa1-734a75e3bc55'), 'key__5': 'user_email', 'value__5': '"hydrous20@gmail.com"', 'id__5': UUID('41cd9e61-9e07-4eff-a77b-d2db9543221f'), 'created_at__6': datetime.datetime(2025, 5, 23, 16, 50, 38, 372498), 'conversation_id__6': UUID('5b29b89f-7986-466d-baa1-734a75e3bc55'), 'key__6': 'is_new_conversation', 'value__6': 'true', 'id__6': UUID('5e701020-c142-4b9f-bd5a-f49ce8e47975'), 'created_at__7': datetime.datetime(2025, 5, 23, 16, 50, 38, 372499), 'conversation_id__7': UUID('5b29b89f-7986-466d-baa1-734a75e3bc55'), 'key__7': 'first_interaction', 'value__7': 'true', 'id__7': UUID('fe06b528-902c-4aac-873a-9469d0f81c12')}
+2025-05-23 16:50:38 - sqlalchemy.engine.Engine - INFO - COMMIT
+2025-05-23 16:50:38 - sqlalchemy.engine.Engine - INFO - BEGIN (implicit)
+2025-05-23 16:50:38 - sqlalchemy.engine.Engine - INFO - SELECT conversations.user_id, conversations.selected_sector, conversations.selected_subsector, conversations.current_question_id, conversations.is_complete, conversations.has_proposal, conversations.client_name, conversations.proposal_text, conversations.pdf_path, conversations.id, conversations.created_at 
+FROM conversations 
+WHERE conversations.id = %(pk_1)s::UUID
+2025-05-23 16:50:38 - sqlalchemy.engine.Engine - INFO - [generated in 0.00036s] {'pk_1': UUID('5b29b89f-7986-466d-baa1-734a75e3bc55')}
+2025-05-23 16:50:38 - sqlalchemy.engine.Engine - INFO - SELECT conversations.user_id AS conversations_user_id, conversations.selected_sector AS conversations_selected_sector, conversations.selected_subsector AS conversations_selected_subsector, conversations.current_question_id AS conversations_current_question_id, conversations.is_complete AS conversations_is_complete, conversations.has_proposal AS conversations_has_proposal, conversations.client_name AS conversations_client_name, conversations.proposal_text AS conversations_proposal_text, conversations.pdf_path AS conversations_pdf_path, conversations.id AS conversations_id, conversations.created_at AS conversations_created_at 
+FROM conversations 
+WHERE conversations.id = %(id_1)s::UUID 
+ LIMIT %(param_1)s
+2025-05-23 16:50:38 - sqlalchemy.engine.Engine - INFO - [generated in 0.00102s] {'id_1': UUID('5b29b89f-7986-466d-baa1-734a75e3bc55'), 'param_1': 1}
+2025-05-23 16:50:38 - sqlalchemy.engine.Engine - INFO - COMMIT
+2025-05-23 16:50:38 - sqlalchemy.engine.Engine - INFO - BEGIN (implicit)
+2025-05-23 16:50:38 - sqlalchemy.engine.Engine - INFO - SELECT conversations.user_id, conversations.selected_sector, conversations.selected_subsector, conversations.current_question_id, conversations.is_complete, conversations.has_proposal, conversations.client_name, conversations.proposal_text, conversations.pdf_path, conversations.id, conversations.created_at 
+FROM conversations 
+WHERE conversations.id = %(pk_1)s::UUID
+2025-05-23 16:50:38 - sqlalchemy.engine.Engine - INFO - [cached since 0.01922s ago] {'pk_1': UUID('5b29b89f-7986-466d-baa1-734a75e3bc55')}
+2025-05-23 16:50:38 - sqlalchemy.engine.Engine - INFO - SELECT conversation_metadata.conversation_id AS conversation_metadata_conversation_id, conversation_metadata.key AS conversation_metadata_key, conversation_metadata.value AS conversation_metadata_value, conversation_metadata.id AS conversation_metadata_id, conversation_metadata.created_at AS conversation_metadata_created_at 
+FROM conversation_metadata 
+WHERE conversation_metadata.conversation_id = %(conversation_id_1)s::UUID AND conversation_metadata.key = %(key_1)s 
+ LIMIT %(param_1)s
+2025-05-23 16:50:38 - sqlalchemy.engine.Engine - INFO - [generated in 0.00099s] {'conversation_id_1': UUID('5b29b89f-7986-466d-baa1-734a75e3bc55'), 'key_1': 'user_name', 'param_1': 1}
+2025-05-23 16:50:38 - sqlalchemy.engine.Engine - INFO - COMMIT
+2025-05-23 16:50:38 - sqlalchemy.engine.Engine - INFO - BEGIN (implicit)
+2025-05-23 16:50:38 - sqlalchemy.engine.Engine - INFO - SELECT conversation_metadata.conversation_id AS conversation_metadata_conversation_id, conversation_metadata.key AS conversation_metadata_key, conversation_metadata.value AS conversation_metadata_value, conversation_metadata.id AS conversation_metadata_id, conversation_metadata.created_at AS conversation_metadata_created_at 
+FROM conversation_metadata 
+WHERE conversation_metadata.conversation_id = %(conversation_id_1)s::UUID AND conversation_metadata.key = %(key_1)s 
+ LIMIT %(param_1)s
+2025-05-23 16:50:38 - sqlalchemy.engine.Engine - INFO - [cached since 0.009856s ago] {'conversation_id_1': UUID('5b29b89f-7986-466d-baa1-734a75e3bc55'), 'key_1': 'user_location', 'param_1': 1}
+2025-05-23 16:50:38 - sqlalchemy.engine.Engine - INFO - COMMIT
+2025-05-23 16:50:38 - sqlalchemy.engine.Engine - INFO - BEGIN (implicit)
+2025-05-23 16:50:38 - sqlalchemy.engine.Engine - INFO - SELECT conversation_metadata.conversation_id AS conversation_metadata_conversation_id, conversation_metadata.key AS conversation_metadata_key, conversation_metadata.value AS conversation_metadata_value, conversation_metadata.id AS conversation_metadata_id, conversation_metadata.created_at AS conversation_metadata_created_at 
+FROM conversation_metadata 
+WHERE conversation_metadata.conversation_id = %(conversation_id_1)s::UUID AND conversation_metadata.key = %(key_1)s 
+ LIMIT %(param_1)s
+2025-05-23 16:50:38 - sqlalchemy.engine.Engine - INFO - [cached since 0.01455s ago] {'conversation_id_1': UUID('5b29b89f-7986-466d-baa1-734a75e3bc55'), 'key_1': 'sector', 'param_1': 1}
+2025-05-23 16:50:38 - sqlalchemy.engine.Engine - INFO - COMMIT
+2025-05-23 16:50:38 - sqlalchemy.engine.Engine - INFO - BEGIN (implicit)
+2025-05-23 16:50:38 - sqlalchemy.engine.Engine - INFO - SELECT conversation_metadata.conversation_id AS conversation_metadata_conversation_id, conversation_metadata.key AS conversation_metadata_key, conversation_metadata.value AS conversation_metadata_value, conversation_metadata.id AS conversation_metadata_id, conversation_metadata.created_at AS conversation_metadata_created_at 
+FROM conversation_metadata 
+WHERE conversation_metadata.conversation_id = %(conversation_id_1)s::UUID AND conversation_metadata.key = %(key_1)s 
+ LIMIT %(param_1)s
+2025-05-23 16:50:38 - sqlalchemy.engine.Engine - INFO - [cached since 0.01854s ago] {'conversation_id_1': UUID('5b29b89f-7986-466d-baa1-734a75e3bc55'), 'key_1': 'subsector', 'param_1': 1}
+2025-05-23 16:50:38 - sqlalchemy.engine.Engine - INFO - COMMIT
+2025-05-23 16:50:38 - sqlalchemy.engine.Engine - INFO - BEGIN (implicit)
+2025-05-23 16:50:38 - sqlalchemy.engine.Engine - INFO - SELECT conversation_metadata.conversation_id AS conversation_metadata_conversation_id, conversation_metadata.key AS conversation_metadata_key, conversation_metadata.value AS conversation_metadata_value, conversation_metadata.id AS conversation_metadata_id, conversation_metadata.created_at AS conversation_metadata_created_at 
+FROM conversation_metadata 
+WHERE conversation_metadata.conversation_id = %(conversation_id_1)s::UUID AND conversation_metadata.key = %(key_1)s 
+ LIMIT %(param_1)s
+2025-05-23 16:50:38 - sqlalchemy.engine.Engine - INFO - [cached since 0.02297s ago] {'conversation_id_1': UUID('5b29b89f-7986-466d-baa1-734a75e3bc55'), 'key_1': 'company_name', 'param_1': 1}
+2025-05-23 16:50:38 - sqlalchemy.engine.Engine - INFO - COMMIT
+2025-05-23 16:50:38 - sqlalchemy.engine.Engine - INFO - BEGIN (implicit)
+2025-05-23 16:50:38 - sqlalchemy.engine.Engine - INFO - SELECT conversation_metadata.conversation_id AS conversation_metadata_conversation_id, conversation_metadata.key AS conversation_metadata_key, conversation_metadata.value AS conversation_metadata_value, conversation_metadata.id AS conversation_metadata_id, conversation_metadata.created_at AS conversation_metadata_created_at 
+FROM conversation_metadata 
+WHERE conversation_metadata.conversation_id = %(conversation_id_1)s::UUID AND conversation_metadata.key = %(key_1)s 
+ LIMIT %(param_1)s
+2025-05-23 16:50:38 - sqlalchemy.engine.Engine - INFO - [cached since 0.02669s ago] {'conversation_id_1': UUID('5b29b89f-7986-466d-baa1-734a75e3bc55'), 'key_1': 'user_email', 'param_1': 1}
+2025-05-23 16:50:38 - sqlalchemy.engine.Engine - INFO - COMMIT
+2025-05-23 16:50:38 - sqlalchemy.engine.Engine - INFO - BEGIN (implicit)
+2025-05-23 16:50:38 - sqlalchemy.engine.Engine - INFO - SELECT conversation_metadata.conversation_id AS conversation_metadata_conversation_id, conversation_metadata.key AS conversation_metadata_key, conversation_metadata.value AS conversation_metadata_value, conversation_metadata.id AS conversation_metadata_id, conversation_metadata.created_at AS conversation_metadata_created_at 
+FROM conversation_metadata 
+WHERE conversation_metadata.conversation_id = %(conversation_id_1)s::UUID AND conversation_metadata.key = %(key_1)s 
+ LIMIT %(param_1)s
+2025-05-23 16:50:38 - sqlalchemy.engine.Engine - INFO - [cached since 0.02927s ago] {'conversation_id_1': UUID('5b29b89f-7986-466d-baa1-734a75e3bc55'), 'key_1': 'is_new_conversation', 'param_1': 1}
+2025-05-23 16:50:38 - sqlalchemy.engine.Engine - INFO - COMMIT
+2025-05-23 16:50:38 - sqlalchemy.engine.Engine - INFO - BEGIN (implicit)
+2025-05-23 16:50:38 - sqlalchemy.engine.Engine - INFO - SELECT conversation_metadata.conversation_id AS conversation_metadata_conversation_id, conversation_metadata.key AS conversation_metadata_key, conversation_metadata.value AS conversation_metadata_value, conversation_metadata.id AS conversation_metadata_id, conversation_metadata.created_at AS conversation_metadata_created_at 
+FROM conversation_metadata 
+WHERE conversation_metadata.conversation_id = %(conversation_id_1)s::UUID AND conversation_metadata.key = %(key_1)s 
+ LIMIT %(param_1)s
+2025-05-23 16:50:38 - sqlalchemy.engine.Engine - INFO - [cached since 0.03246s ago] {'conversation_id_1': UUID('5b29b89f-7986-466d-baa1-734a75e3bc55'), 'key_1': 'first_interaction', 'param_1': 1}
+2025-05-23 16:50:38 - sqlalchemy.engine.Engine - INFO - COMMIT
+2025-05-23 16:50:38 - hydrous - INFO - DBG_SS: Conversación 5b29b89f-7986-466d-baa1-734a75e3bc55 actualizada en base de datos.
+2025-05-23 09:51:51 - root - INFO - Configuración de logging inicializada
+2025-05-23 16:51:54 - root - INFO - Configuración de logging inicializada
+2025-05-23 09:59:45 - root - INFO - Configuración de logging inicializada
+2025-05-23 16:59:45 - root - INFO - Configuración de logging inicializada
+2025-05-23 10:00:23 - root - INFO - Configuración de logging inicializada
+2025-05-23 17:00:23 - root - INFO - Configuración de logging inicializada
+2025-05-23 10:06:54 - root - INFO - Configuración de logging inicializada
+2025-05-23 17:06:55 - root - INFO - Configuración de logging inicializada
+2025-05-23 10:21:30 - root - INFO - Configuración de logging inicializada
+2025-05-23 17:21:30 - root - INFO - Configuración de logging inicializada

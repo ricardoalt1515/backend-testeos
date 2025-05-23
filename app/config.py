@@ -21,8 +21,8 @@ class Settings(BaseSettings):
     CORS_ORIGINS: List[str] = [
         "http://localhost:3000",  # Para desarrollo local
         "https://h2oassistant.com",
-        "https://www.h2oassistant.com",  # Tu dominio principal
-        "https://hydrous-chat.vercel.app",  # Vercel deployment (backup)
+        "https://www.h2oassistant.com",  # Dominio principal de producción
+        "https://hydrous-chat.vercel.app",  # Vercel deployment backup
         "*" if os.getenv("DEBUG", "False").lower() in ("true", "1", "t") else "",
     ]
 
