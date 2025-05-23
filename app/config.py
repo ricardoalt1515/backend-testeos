@@ -14,15 +14,15 @@ class Settings(BaseSettings):
 
     # URL del backend para enlaces absolutos
     BACKEND_URL: str = os.getenv(
-        "BACKEND_URL", "https://backend-chatbot-owzs.onrender.com"
+        "BACKEND_URL", "https://api.h2oassistant.com"
     )
 
     # CORS
     CORS_ORIGINS: List[str] = [
-        "https://ricardoalt1515.github.io",
         "http://localhost:3000",  # Para desarrollo local
         "https://h2oassistant.com",
-        "https://www.h2oassistant.com",  
+        "https://www.h2oassistant.com",  # Tu dominio principal
+        "https://hydrous-chat.vercel.app",  # Vercel deployment (backup)
         "*" if os.getenv("DEBUG", "False").lower() in ("true", "1", "t") else "",
     ]
 
